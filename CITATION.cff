@@ -7,9 +7,9 @@ authors:
     family-names: "[Your family name]"
     affiliation: "[optional: University of Graz]"
 license: MIT
-repository-code: "https://github.com/YOUR-ORG/photonics-playground"
-url: "https://YOUR-ORG.github.io/photonics-playground/"
-date-released: "2026-11-15"
+repository-code: "https://github.com/Photonics-Playground/photonics-playground"
+url: "https://photonics-playground.github.io/photonics-playground/"
+date-released: "2026-11-16"
 keywords:
   - integrated photonics
   - inverse design
