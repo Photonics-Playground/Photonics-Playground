@@ -4,7 +4,7 @@
 
 **Learn integrated photonics hands-on.** Every page is a live simulation that runs entirely in your browser, on any device, with nothing to install.
 
-**▶ Open the playground: https://photonics-playground.github.io/photonics-playground/**
+**▶ Open the playground: [https://photonics-playground.github.io/photonics-playground/](https://photonics-playground.github.io/Photonics-Playground/)**
 
 ## What's inside
 
