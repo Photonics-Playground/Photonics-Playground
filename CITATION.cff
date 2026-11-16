@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use Photonics Playground, please cite it as below."
+title: "Photonics Playground: interactive integrated photonics in the browser"
+type: software
+authors:
+  - given-names: "Christoph"
+    family-names: "[Your family name]"
+    affiliation: "[optional: University of Graz]"
+license: MIT
+repository-code: "https://github.com/YOUR-ORG/photonics-playground"
+url: "https://YOUR-ORG.github.io/photonics-playground/"
+date-released: "2026-11-15"
+keywords:
+  - integrated photonics
+  - inverse design
+  - FDFD
+  - adjoint method
+  - education
