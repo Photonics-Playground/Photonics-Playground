@@ -1,0 +1,433 @@
+<title>Waveguide Mode Solver</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: controls rail left, cross-section + propagation views right; mode table, width sweep and explainer below */
+:root{
+  --bg:#F3F5F8; --panel:#FFFFFF; --fg:#16212E; --muted:#5B6878; --line:#D9DFE7; --grid:#E6EAF0;
+  --accent:#2350C8; --fneg:#2350C8; --fmid:#F7F8FA; --fpos:#D2492A; --hot:#C08A12; --edge:#16212E;
+  --te:#2350C8; --tm:#D2492A; --warn:#B4441F;
+  --f-display:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-body:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E141C; --panel:#151D28; --fg:#E4E9F0; --muted:#93A0B1; --line:#283444; --grid:#1F2A37;
+  --accent:#7DA2FF; --fneg:#5B8BFF; --fmid:#111821; --fpos:#FF7A55; --hot:#F2C14E; --edge:#E4E9F0;
+  --te:#7DA2FF; --tm:#FF8A6B; --warn:#FF8A6B; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E141C; --panel:#151D28; --fg:#E4E9F0; --muted:#93A0B1; --line:#283444; --grid:#1F2A37;
+  --accent:#7DA2FF; --fneg:#5B8BFF; --fmid:#111821; --fpos:#FF7A55; --hot:#F2C14E; --edge:#E4E9F0;
+  --te:#7DA2FF; --tm:#FF8A6B; --warn:#FF8A6B; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+.wrap{max-width:1200px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+header h1{font-family:var(--f-display);font-weight:700;font-size:clamp(1.6rem,3.6vw,2.3rem);letter-spacing:-.01em;margin:0;text-wrap:balance}
+header p{margin:6px 0 0;color:var(--muted);max-width:74ch}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
+.label{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+button,select,input{font:inherit}button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.grid{display:grid;grid-template-columns:300px minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+.controls{display:flex;flex-direction:column;gap:14px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:.8rem;padding:5px 9px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--fg)}
+.chip:hover{border-color:var(--accent);color:var(--accent)}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{border:0;background:transparent;color:var(--fg);padding:5px 12px;font-weight:600;font-size:.82rem}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--panel)}
+.ctl{display:flex;flex-direction:column;gap:3px}
+.ctl .row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:.88rem}
+.ctl .row b{font-family:var(--f-mono);font-weight:500;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.f{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:.88rem}
+.f select,.f input{font-family:var(--f-mono);font-size:.84rem;padding:4px 6px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--fg);max-width:150px}
+.f input{width:80px;text-align:right}
+.status{font-family:var(--f-mono);font-size:.8rem;color:var(--muted);min-height:1.2em}
+.status.busy{color:var(--accent)}
+.views{display:flex;flex-direction:column;gap:16px;min-width:0}
+.plot-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.plot-head h2{font-size:1rem;margin:0;font-weight:600}
+.plot-head span.s{font-size:.82rem;color:var(--muted)}
+.modes{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.mchip{display:inline-flex;align-items:center;gap:7px;font-family:var(--f-mono);font-size:.82rem;padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--fg)}
+.mchip i{width:9px;height:9px;border-radius:50%}
+.mchip[aria-pressed="true"]{border-color:currentColor;font-weight:500}
+canvas{display:block;width:100%}
+#cX{aspect-ratio:16/10;height:auto}
+#cZ{height:220px}
+#cSweep{height:260px}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:.8rem;color:var(--muted);margin-top:8px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.ramp{width:56px;height:10px;border-radius:2px;display:inline-block;border:1px solid var(--line)}
+.sw{width:16px;height:3px;display:inline-block;border-radius:2px}
+.zbar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin-top:10px;font-size:.88rem}
+.zbar select{font-family:var(--f-mono);font-size:.82rem;padding:4px 6px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--fg)}
+.zbar b{font-family:var(--f-mono);font-weight:500}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.86rem;font-variant-numeric:tabular-nums}
+th{text-align:right;font-weight:600;color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{text-align:right;font-family:var(--f-mono);padding:6px 8px;border-bottom:1px solid var(--grid)}
+th:first-child,td:first-child{text-align:left}
+tr.sel td{background:var(--bg)}
+tbody tr{cursor:pointer}
+.btn{padding:6px 12px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--fg);font-weight:600;font-size:.84rem}
+.btn:hover{border-color:var(--accent)}
+.steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+@media (max-width:860px){.steps{grid-template-columns:1fr}}
+.steps h3{margin:4px 0 6px;font-size:1rem}
+.steps p{margin:0;color:var(--muted);font-size:.9rem}
+.steps .k{font-family:var(--f-mono);font-size:.75rem;color:var(--accent);font-weight:500}
+.eq{font-family:var(--f-mono);font-size:.8rem;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 9px;margin-top:8px;overflow-x:auto;white-space:nowrap}
+footer{color:var(--muted);font-size:.82rem}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Waveguide Mode Solver</h1>
+    <p>On photonic chips, light is usually guided in wire (channel) waveguides, which confine it in two dimensions: sideways and vertically. Choose a cross-section and see which TE- and TM-like modes it supports, how their fields oscillate, and how they travel and beat along the waveguide.</p>
+  </header>
+
+  <div class="grid">
+    <section class="panel controls" aria-label="Waveguide parameters">
+      <div><div class="label" style="margin-bottom:6px">Presets</div><div class="chips" id="presets"></div></div>
+      <div class="f"><span>Geometry</span><div class="seg" role="group" aria-label="Geometry"><button id="gStrip" aria-pressed="true">Strip</button><button id="gRib" aria-pressed="false">Rib</button></div></div>
+      <div class="ctl"><div class="row"><label for="sW">Width</label><b id="vW"></b></div><input type="range" id="sW" min="0.2" max="3" step="0.01"></div>
+      <div class="ctl"><div class="row"><label for="sH">Height</label><b id="vH"></b></div><input type="range" id="sH" min="0.08" max="1" step="0.01"></div>
+      <div class="ctl" id="slabCtl" hidden><div class="row"><label for="sS">Slab thickness</label><b id="vS"></b></div><input type="range" id="sS" min="0.02" max="0.9" step="0.01"></div>
+      <div class="ctl"><div class="row"><label for="sL">Wavelength</label><b id="vL"></b></div><input type="range" id="sL" min="1.0" max="2.0" step="0.005"></div>
+      <div class="f"><label for="mCore">Core</label><select id="mCore"></select></div>
+      <div class="f"><label for="mClad">Top cladding</label><select id="mClad"></select></div>
+      <div class="f"><label for="mSub">Substrate</label><select id="mSub"></select></div>
+      <div class="f"><span>Mesh</span><div class="seg" role="group" aria-label="Mesh"><button data-r="draft" aria-pressed="false">Draft</button><button data-r="normal" aria-pressed="true">Normal</button><button data-r="fine" aria-pressed="false">Fine</button></div></div>
+      <div class="status" id="status"></div>
+    </section>
+
+    <div class="views">
+      <section class="panel">
+        <div class="plot-head"><h2>Cross-section</h2>
+          <div class="seg" role="group" aria-label="Field view"><button id="vAnim" aria-pressed="true">Field</button><button id="vInt" aria-pressed="false">Intensity</button></div></div>
+        <div class="modes" id="modes" role="group" aria-label="Guided modes"></div>
+        <canvas id="cX" aria-label="Mode field in the waveguide cross-section"></canvas>
+        <div class="legend" id="legX"></div>
+      </section>
+      <section class="panel">
+        <div class="plot-head"><h2>Along the waveguide</h2><span class="s" id="zInfo"></span></div>
+        <canvas id="cZ" aria-label="Field travelling along the waveguide, seen from above"></canvas>
+        <div class="zbar">
+          <label for="mix">Superpose with</label><select id="mix"></select>
+          <div class="seg" role="group" aria-label="Propagation view"><button id="zWave" aria-pressed="true">Wave</button><button id="zInt" aria-pressed="false">Intensity</button></div>
+          <span id="beat"></span>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <section class="panel">
+    <div class="plot-head"><h2>Guided modes</h2><span class="s">tap a row to show that mode</span></div>
+    <div class="tablewrap"><table><thead><tr><th>Mode</th><th>n<sub>eff</sub></th><th>λ in guide</th><th>Core fraction</th><th>A<sub>eff</sub></th></tr></thead><tbody id="tbody"></tbody></table></div>
+  </section>
+
+  <section class="panel">
+    <div class="plot-head"><h2>Effective index vs. width</h2><button class="btn" id="bSweep">Sweep width</button></div>
+    <canvas id="cSweep" aria-label="Effective index of each mode versus waveguide width"></canvas>
+    <div class="legend"><span><i class="sw" style="background:var(--te)"></i>quasi-TE</span><span><i class="sw" style="background:var(--tm);background:repeating-linear-gradient(90deg,var(--tm) 0 5px,transparent 5px 8px)"></i>quasi-TM</span><span>shaded = single-mode (only TE0 and TM0)</span><span id="sweepInfo"></span></div>
+  </section>
+
+  <section class="panel">
+    <div class="plot-head"><h2>What to look for</h2></div>
+    <div class="steps">
+      <div><span class="k">TWO DIMENSIONS</span><h3>From slab to channel</h3><p>A slab waveguide confines light in one direction only. A wire (strip) waveguide also confines it sideways, so each mode now has two numbers: how many lobes across the width and across the height. Narrow the waveguide and watch higher modes slip below the cladding line.</p></div>
+      <div><span class="k">POLARIZATION</span><h3>TE and TM</h3><p>Light is a wave whose electric field points in a certain direction, its polarization. On a chip there are two natural choices: the field points sideways, parallel to the chip surface (TE, transverse electric), or up and down (TM, transverse magnetic). The two see the core differently, so each has its own effective index and its own mode shape. Switch between TE and TM above to compare them. In a wire waveguide the field is mostly, not purely, in one direction, which is why the modes are called quasi-TE and quasi-TM.</p></div>
+      <div><span class="k">BIREFRINGENCE</span><h3>Geometry sets polarization</h3><p>Make the core square and the TE and TM indices nearly meet. Thin, wide cores are strongly birefringent, which is why silicon photonics is typically designed for TE.</p></div>
+      <div><span class="k">MODE BEATING</span><h3>Interference along z</h3><p>Two modes travel at different speeds, so their sum shifts sideways and back again with the beat length. This is the principle behind multimode interference couplers and directional couplers.</p>
+        <div class="eq">L_beat = λ / (n_eff,1 − n_eff,2)</div></div>
+    </div>
+  </section>
+  <footer><b>Model and accuracy.</b> Semi-vectorial finite-difference eigenmode solver on a uniform mesh with closed boundaries; shift-invert subspace iteration. Validation: the slab limit converges to the analytic TE and TM solutions (2.8488 vs. 2.8478 at 10 nm mesh). Runs entirely in your browser.</footer>
+</div>
+
+<script type="text/plain" id="wsrc">
+// Semi-vectorial finite-difference mode solver (quasi-TE: Ex, quasi-TM: Ey) for strip and rib waveguides.
+// Quasi-TE:  d/dx[ (1/n²) d(n² Ex)/dx ] + d²Ex/dy² + k0² n² Ex = β² Ex   (and x<->y for quasi-TM)
+function grid(g){ // g: {type,w,h,slab,nCore,nClad,nSub,lam,res}
+  const d0=g.res, ny_h=Math.max(2,Math.round(g.h/d0)), dy=g.h/ny_h;
+  const nx_w=Math.max(2,Math.round(g.w/d0)), dx=g.w/nx_w;
+  const NA=Math.sqrt(Math.max(1e-6,g.nCore*g.nCore-Math.max(g.nClad,g.nSub)**2)),fm=Math.min(3,Math.max(1,1.6/NA));
+  const mx=Math.max(0.7,0.55*g.lam)*fm, my=Math.max(0.6,0.5*g.lam)*fm;
+  const nmx=Math.round(mx/dx), nmy=Math.round(my/dy);
+  const nx=nx_w+2*nmx, ny=ny_h+2*nmy;
+  const slabC=g.type==='rib'?Math.min(ny_h-1,Math.max(1,Math.round(g.slab/dy))):0;
+  const n2=new Float64Array(nx*ny), core=new Uint8Array(nx*ny);
+  for(let x=0;x<nx;x++)for(let y=0;y<ny;y++){ // y=0 bottom
+    let n=y<nmy?g.nSub:g.nClad,c=0;
+    const inY=y>=nmy&&y<nmy+ny_h, inX=x>=nmx&&x<nmx+nx_w;
+    if(inY&&inX){n=g.nCore;c=1;}
+    if(slabC&&y>=nmy&&y<nmy+slabC){n=g.nCore;c=1;}
+    n2[x*ny+y]=n*n;core[x*ny+y]=c;}
+  return {nx,ny,dx,dy,n2,core,x0:-(nmx+nx_w/2)*dx,y0:-nmy*dy,N:nx*ny};
+}
+// banded real matrix, idx = x*ny + y (bandwidth ny)
+function assemble(G,pol,k0){const {nx,ny,dx,dy,n2,N}=G,BW=ny,LDA=2*BW+1,M=new Float64Array(N*LDA);
+  const at=(x,y)=>n2[Math.min(nx-1,Math.max(0,x))*ny+Math.min(ny-1,Math.max(0,y))];
+  for(let x=0;x<nx;x++)for(let y=0;y<ny;y++){const i=x*ny+y,b=i*LDA+BW,ni=n2[i];
+    let diag=k0*k0*ni;
+    // weighted direction: x for TE (Ex), y for TM (Ey)
+    const wd=pol==='TE'?'x':'y';
+    for(const dir of ['x','y']){const h2=dir==='x'?dx*dx:dy*dy;
+      const nb=[[dir==='x'?x+1:x,dir==='x'?y:y+1,dir==='x'?ny:1],[dir==='x'?x-1:x,dir==='x'?y:y-1,dir==='x'?-ny:-1]];
+      for(const[xx,yy,off] of nb){const inside=xx>=0&&xx<nx&&yy>=0&&yy<ny;const nn=at(xx,yy);
+        if(dir===wd){const m=(ni+nn)/2;diag-=ni/m/h2;if(inside)M[b+off]=nn/m/h2;}
+        else{diag-=1/h2;if(inside)M[b+off]=1/h2;}}}
+    M[b]=diag;}
+  return {M,BW,LDA,N};}
+function matvec(A,v,out){const {M,BW,LDA,N}=A;for(let i=0;i<N;i++){let s=0;const j0=Math.max(0,i-BW),j1=Math.min(N-1,i+BW),r=i*LDA+BW-i;for(let j=j0;j<=j1;j++){const m=M[r+j];if(m!==0)s+=m*v[j];}out[i]=s;}}
+function luShift(A,sigma){const {M,BW,LDA,N}=A,L=Float64Array.from(M);for(let i=0;i<N;i++)L[i*LDA+BW]-=sigma;
+  for(let k=0;k<N;k++){const p=L[k*LDA+BW],iend=Math.min(N-1,k+BW),rk=k*LDA+BW-k;
+    for(let i=k+1;i<=iend;i++){const ri=i*LDA+BW-i,a=L[ri+k];if(a===0)continue;const l=a/p;L[ri+k]=l;for(let j=k+1;j<=iend;j++){const u=L[rk+j];if(u!==0)L[ri+j]-=l*u;}}}
+  return L;}
+function luSolve(A,L,b){const {BW,LDA,N}=A;
+  for(let i=0;i<N;i++){const r=i*LDA+BW-i;let s=b[i];const j0=i-BW>0?i-BW:0;for(let j=j0;j<i;j++)s-=L[r+j]*b[j];b[i]=s;}
+  for(let i=N-1;i>=0;i--){const r=i*LDA+BW-i;let s=b[i];const j1=i+BW<N-1?i+BW:N-1;for(let j=i+1;j<=j1;j++)s-=L[r+j]*b[j];b[i]=s/L[r+i];}}
+function orth(Q){const k=Q.length;for(let a=0;a<k;a++){for(let b=0;b<a;b++){let d=0;const qa=Q[a],qb=Q[b];for(let i=0;i<qa.length;i++)d+=qa[i]*qb[i];for(let i=0;i<qa.length;i++)qa[i]-=d*qb[i];}
+  let n=0;for(const v of Q[a])n+=v*v;n=Math.sqrt(n)||1;for(let i=0;i<Q[a].length;i++)Q[a][i]/=n;}}
+// shift-invert orthogonal iteration -> Schur vectors -> eigenvectors
+function eigs(A,sigma,k,seed0,floor,init){const N=A.N,L=luShift(A,sigma);let seed=seed0||7;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647-0.5;};
+  let Q=[];for(let a=0;a<k;a++){const v=new Float64Array(N);if(init&&init[a]&&init[a].length===N){for(let i=0;i<N;i++)v[i]=init[a][i]+1e-3*rnd();}else for(let i=0;i<N;i++)v[i]=rnd();Q.push(v);}orth(Q);
+  const AQ=Q.map(()=>new Float64Array(N));let prev=null,R=null;
+  let iters=0;
+  for(let it=0;it<120;it++){iters=it+1;for(const q of Q)luSolve(A,L,q);orth(Q);
+    if(it%3===2){for(let a=0;a<k;a++)matvec(A,Q[a],AQ[a]);R=[];for(let a=0;a<k;a++){R.push([]);for(let b=0;b<k;b++){let s=0;const qa=Q[a],aq=AQ[b];for(let i=0;i<N;i++)s+=qa[i]*aq[i];R[a].push(s);}}
+      // converged when every eigenvalue above the cladding line has settled
+      const d=R.map((r,a)=>r[a]);if(prev&&it>=14&&d.every((v,a)=>Math.abs(v-prev[a])<(v<floor*1.002?2e-3:2e-8)*Math.abs(v)))break;prev=d;}}
+  const out=[];for(let j=0;j<k;j++){const y=new Float64Array(k);y[j]=1;for(let i=j-1;i>=0;i--){let s=0;for(let l=i+1;l<=j;l++)s+=R[i][l]*y[l];const den=R[i][i]-R[j][j];y[i]=Math.abs(den)>1e-14*Math.abs(R[j][j])?-s/den:0;}
+    const v=new Float64Array(N);for(let a=0;a<k;a++)if(y[a]!==0)for(let i=0;i<N;i++)v[i]+=y[a]*Q[a][i];
+    let n=0,mx=0,sg=1;for(let i=0;i<N;i++){n+=v[i]*v[i];if(Math.abs(v[i])>mx){mx=Math.abs(v[i]);sg=Math.sign(v[i]);}}n=Math.sqrt(n);for(let i=0;i<N;i++)v[i]*=sg/n;
+    // residual check
+    const Av=new Float64Array(N);matvec(A,v,Av);let r=0;for(let i=0;i<N;i++)r+=(Av[i]-R[j][j]*v[i])**2;
+    out.push({beta2:R[j][j],v,res:Math.sqrt(r)/Math.abs(R[j][j]),iters});}
+  return out.sort((a,b)=>b.beta2-a.beta2);}
+// effective index of the rib's lateral slab (same discretization along y): rib modes below it leak into the slab
+function slabNeff(G,pol,k0,x){const ny=G.ny,dy=G.dy;const n2=y=>G.n2[x*ny+Math.min(ny-1,Math.max(0,y))];
+  const d=new Float64Array(ny),lo=new Float64Array(ny),up=new Float64Array(ny);let mx=0;
+  for(let y=0;y<ny;y++){const ni=n2(y);mx=Math.max(mx,ni);let dg=k0*k0*ni;
+    for(const s of [1,-1]){const yy=y+s,inside=yy>=0&&yy<ny,nn=n2(yy);if(pol==='TM'){const m=(ni+nn)/2;dg-=ni/m/(dy*dy);if(inside)(s>0?up:lo)[y]=nn/m/(dy*dy);}else{dg-=1/(dy*dy);if(inside)(s>0?up:lo)[y]=1/(dy*dy);}}
+    d[y]=dg;}
+  const sg=k0*k0*mx*1.0005;let v=new Float64Array(ny).fill(1),lam=0;
+  for(let it=0;it<60;it++){ // inverse iteration with a tridiagonal solve
+    const a=Float64Array.from(lo),b=d.map(x=>x-sg),c=Float64Array.from(up),r=Float64Array.from(v);
+    for(let i=1;i<ny;i++){const m=a[i]/b[i-1];b[i]-=m*c[i-1];r[i]-=m*r[i-1];}
+    const z=new Float64Array(ny);z[ny-1]=r[ny-1]/b[ny-1];for(let i=ny-2;i>=0;i--)z[i]=(r[i]-c[i]*z[i+1])/b[i];
+    let n=0;for(const q of z)n+=q*q;n=Math.sqrt(n);for(let i=0;i<ny;i++)v[i]=z[i]/n;}
+  let num=0;for(let y=0;y<ny;y++){let s=d[y]*v[y];if(y>0)s+=lo[y]*v[y-1];if(y<ny-1)s+=up[y]*v[y+1];num+=v[y]*s;}
+  return Math.sqrt(Math.max(0,num))/k0;}
+function solveAll(g,K,init){const G=grid(g),k0=2*Math.PI/g.lam;const ncl=Math.max(g.nClad,g.nSub),nmax=Math.max(g.nCore,ncl);const sigma=k0*k0*nmax*nmax*1.0005;
+  const res={G,modes:[],iters:[],cut:{}};
+  // power within 5 cells of the domain edge: guided modes have essentially none
+  const edgeFrac=v=>{let t=0,e=0;for(let x=0;x<G.nx;x++)for(let y=0;y<G.ny;y++){const p=v[x*G.ny+y]**2;t+=p;if(x<5||y<5||x>=G.nx-5||y>=G.ny-5)e+=p;}return e/t;};
+  for(const pol of ['TE','TM']){const cut=g.type==='rib'?Math.max(ncl,slabNeff(G,pol,k0,2)):ncl;res.cut[pol]=cut;const floor=k0*k0*cut*cut;
+    const A=assemble(G,pol,k0);const ev=eigs(A,sigma,K||4,pol==='TE'?7:11,floor,init&&init[pol]);res.iters.push(ev[0]&&ev[0].iters);res['vec'+pol]=ev.map(e=>e.v);
+    let m=0;ev.forEach(e=>{const neff=Math.sqrt(Math.max(0,e.beta2))/k0;if(neff<=cut+1e-4||e.res>1e-3||edgeFrac(e.v)>0.08)return;
+      let tot=0,inc=0,s2=0,s4=0;for(let i=0;i<G.N;i++){const p=e.v[i]*e.v[i];tot+=p;if(G.core[i])inc+=p;s2+=p;s4+=p*p;}
+      res.modes.push({pol,m:m++,neff,gamma:inc/tot,aeff:s2*s2/s4*G.dx*G.dy,field:e.v,res:e.res});});}
+  return res;}
+function neffsAt(g,lam,init){const r=solveAll(Object.assign({},g,{lam}),4,init);return r.modes.map(md=>({pol:md.pol,m:md.m,neff:md.neff}));}
+if(typeof self!=='undefined'&&typeof module==='undefined'){
+  let job=0;
+  self.onmessage=ev=>{const m=ev.data;const my=++job;
+    if(m.cmd==='solve'){const t0=Date.now();const r=solveAll(m.g,4);const G=r.G;
+      self.postMessage({type:'modes',id:m.id,ms:Date.now()-t0,grid:{nx:G.nx,ny:G.ny,dx:G.dx,dy:G.dy,x0:G.x0,y0:G.y0,n2:Float32Array.from(G.n2),core:G.core},
+        cut:r.cut,modes:r.modes.map(md=>({pol:md.pol,m:md.m,neff:md.neff,gamma:md.gamma,aeff:md.aeff,field:Float32Array.from(md.field)}))});
+      // group index from a central difference in wavelength (waveguide dispersion with constant material indices)
+      setTimeout(()=>{if(my!==job)return;const dl=0.01;const ini={TE:r.vecTE,TM:r.vecTM};const a=neffsAt(m.g,m.g.lam-dl,ini),b=neffsAt(m.g,m.g.lam+dl,ini);
+        const ng=r.modes.map(md=>{const p=a.find(x=>x.pol===md.pol&&x.m===md.m),q=b.find(x=>x.pol===md.pol&&x.m===md.m);return p&&q?md.neff-m.g.lam*(q.neff-p.neff)/(2*dl):NaN;});
+        if(my===job)self.postMessage({type:'ng',id:m.id,ng});},0);}
+    else if(m.cmd==='sweep'){const ws=m.ws,out=[];let i=0;
+      const nxt=()=>{if(my!==job||i>=ws.length){if(my===job)self.postMessage({type:'sweepdone',id:m.id});return;}
+        const r=neffsAt(Object.assign({},m.g,{w:ws[i]}),m.g.lam);self.postMessage({type:'sweep',id:m.id,w:ws[i],modes:r});i++;setTimeout(nxt,0);};nxt();}
+    else if(m.cmd==='cancel'){}
+  };
+}
+if(typeof module!=='undefined')module.exports={grid,assemble,eigs,solveAll,neffsAt};
+
+</script>
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const w=new Worker(URL.createObjectURL(new Blob([$('wsrc').textContent],{type:'text/javascript'})));
+const CORES=[['Silicon (3.476)',3.476],['SiN (1.996)',1.996],['LiNbO₃ (2.211)',2.211],['TiO₂ (2.35)',2.35],['InP (3.17)',3.17],['Polymer (1.57)',1.57]];
+const CLADS=[['SiO₂ (1.444)',1.444],['Air (1.0)',1.0],['Polymer (1.57)',1.57],['Water (1.316)',1.316]];
+const PRESETS=[['Si wire 500 × 220',{type:'strip',w:0.5,h:0.22,slab:0.09,nCore:3.476,nClad:1.444,nSub:1.444,lam:1.55}],
+  ['Si rib 500 / 220 / 90',{type:'rib',w:0.5,h:0.22,slab:0.09,nCore:3.476,nClad:1.444,nSub:1.444,lam:1.55}],
+  ['Si wire, air top',{type:'strip',w:0.5,h:0.22,slab:0.09,nCore:3.476,nClad:1.0,nSub:1.444,lam:1.55}],
+  ['SiN 1200 × 400',{type:'strip',w:1.2,h:0.4,slab:0.1,nCore:1.996,nClad:1.444,nSub:1.444,lam:1.55}],
+  ['Thin-film LN rib',{type:'rib',w:1.2,h:0.6,slab:0.3,nCore:2.211,nClad:1.0,nSub:1.444,lam:1.55}],
+  ['Square Si 300 × 300',{type:'strip',w:0.3,h:0.3,slab:0.1,nCore:3.476,nClad:1.444,nSub:1.444,lam:1.55}]];
+const RES={draft:7,normal:10,fine:15};
+let g=Object.assign({},PRESETS[0][1]),mesh='normal',data=null,ngs=null,sel=0,mixSel=-1,xView='anim',zView='wave',phase=0,reqId=0,sweep=null,preset=0;
+
+// ---------- controls ----------
+function fill(sel,opts,v){sel.innerHTML=opts.map(([t,x])=>`<option value="${x}">${t}</option>`).join('');sel.value=String(v);}
+fill($('mCore'),CORES,g.nCore);fill($('mClad'),CLADS,g.nClad);fill($('mSub'),CLADS,g.nSub);
+PRESETS.forEach(([n,p],i)=>{const b=document.createElement('button');b.className='chip';b.textContent=n;b.onclick=()=>{g=Object.assign({},p);preset=i;sweep=null;syncUI();solve();};$('presets').appendChild(b);});
+const um=v=>v>=1?v.toFixed(2)+' µm':Math.round(v*1000)+' nm';
+function syncUI(){$('sW').value=g.w;$('sH').value=g.h;$('sS').value=g.slab;$('sL').value=g.lam;
+  $('vW').textContent=um(g.w);$('vH').textContent=um(g.h);$('vS').textContent=um(g.slab);$('vL').textContent=Math.round(g.lam*1000)+' nm';
+  $('gStrip').setAttribute('aria-pressed',g.type==='strip');$('gRib').setAttribute('aria-pressed',g.type==='rib');$('slabCtl').hidden=g.type!=='rib';
+  $('mCore').value=String(g.nCore);$('mClad').value=String(g.nClad);$('mSub').value=String(g.nSub);
+  document.querySelectorAll('#presets .chip').forEach((b,i)=>b.setAttribute('aria-pressed',i===preset));
+  document.querySelectorAll('[data-r]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.r===mesh));}
+let tmr=0;function later(){clearTimeout(tmr);tmr=setTimeout(solve,350);}
+[['sW','w'],['sH','h'],['sS','slab'],['sL','lam']].forEach(([id,k])=>$(id).addEventListener('input',e=>{g[k]=+e.target.value;if(g.type==='rib'&&g.slab>=g.h)g.slab=+(g.h-0.01).toFixed(2);preset=-1;if(k!=='lam'||true)sweep=k==='w'?sweep:null;syncUI();later();}));
+$('gStrip').onclick=()=>{g.type='strip';preset=-1;sweep=null;syncUI();solve();};$('gRib').onclick=()=>{g.type='rib';if(g.slab>=g.h)g.slab=+(g.h/2).toFixed(2);preset=-1;sweep=null;syncUI();solve();};
+[['mCore','nCore'],['mClad','nClad'],['mSub','nSub']].forEach(([id,k])=>$(id).addEventListener('change',e=>{g[k]=+e.target.value;preset=-1;sweep=null;syncUI();solve();}));
+document.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{mesh=b.dataset.r;syncUI();solve();});
+function resFor(){return Math.max(0.006,Math.min(0.06,Math.min(g.w,g.h)/RES[mesh]));}
+
+// ---------- worker ----------
+function solve(){if(sweep&&!sweep.done){sweep.done=true;$('bSweep').textContent='Sweep width';$('sweepInfo').textContent='sweep stopped';}const id=++reqId;$('status').textContent='Solving…';$('status').className='status busy';ngs=null;
+  w.postMessage({cmd:'solve',id,g:Object.assign({},g,{res:resFor()})});}
+w.onmessage=e=>{const m=e.data;
+  if(m.type==='modes'&&m.id===reqId){data=m;const prevKey=data.modes[sel]?null:null;
+    if(sel>=m.modes.length)sel=0;mixSel=-1;
+    $('status').className='status';$('status').textContent=m.modes.length?`${m.modes.length} guided mode${m.modes.length>1?'s':''} · ${m.grid.nx}×${m.grid.ny} mesh · ${m.ms} ms`:`No guided modes. Make the core wider, thicker, or higher in index.`;
+    modesUI();tableUI();drawSweep();}
+  else if(m.type==='ng'&&m.id===reqId){ngs=m.ng;tableUI();zInfo();}
+  else if(m.type==='sweep'&&sweep&&m.id===sweep.id){sweep.pts.push({w:m.w,modes:m.modes});$('sweepInfo').textContent=`computing… ${sweep.pts.length}/${sweep.ws.length}`;drawSweep();}
+  else if(m.type==='sweepdone'&&sweep&&m.id===sweep.id){sweep.done=true;$('sweepInfo').textContent='';$('bSweep').textContent='Sweep width';drawSweep();
+    // the sweep cancelled the group-index job; restore the current solution
+    solve();}
+};
+$('bSweep').onclick=()=>{if(sweep&&!sweep.done){return;}const lo=Math.max(0.2,Math.min(g.w,g.h)*0.6),hi=Math.max(g.w*2.2,1.2);const n=18,ws=[];for(let i=0;i<n;i++)ws.push(+(lo+(hi-lo)*i/(n-1)).toFixed(3));
+  const id=++reqId;sweep={id,ws,pts:[],done:false,g:JSON.stringify(g)};$('bSweep').textContent='Sweeping…';$('sweepInfo').textContent='computing…';
+  w.postMessage({cmd:'sweep',id,ws,g:Object.assign({},g,{res:Math.max(0.006,Math.min(0.06,g.h/RES.draft))})});};
+
+// ---------- colors ----------
+let C=null;
+function hex(h){h=h.replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
+function readCss(){const s=getComputedStyle(document.documentElement),gg=k=>s.getPropertyValue(k).trim();
+  C={fg:gg('--fg'),muted:gg('--muted'),line:gg('--line'),grid:gg('--grid'),panel:gg('--panel'),accent:gg('--accent'),edge:gg('--edge'),te:gg('--te'),tm:gg('--tm'),mono:gg('--f-mono'),
+    neg:hex(gg('--fneg')),mid:hex(gg('--fmid')),pos:hex(gg('--fpos')),hot:hex(gg('--hot'))};}
+const mix=(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];
+const divc=v=>v<0?mix(C.mid,C.neg,Math.min(1,-v)):mix(C.mid,C.pos,Math.min(1,v));
+const heat=v=>{v=Math.max(0,Math.min(1,v));return v<0.6?mix(C.mid,C.pos,v/0.6):mix(C.pos,C.hot,(v-0.6)/0.4);};
+const polC=p=>p==='TE'?C.te:C.tm;
+
+// ---------- mode chips & table ----------
+function modesUI(){const box=$('modes');box.innerHTML='';if(!data)return;
+  data.modes.forEach((md,i)=>{const b=document.createElement('button');b.className='mchip';b.setAttribute('aria-pressed',i===sel);b.style.color=i===sel?polC(md.pol):'';
+    b.innerHTML=`<i style="background:${polC(md.pol)}"></i>${md.pol}${md.m} · ${md.neff.toFixed(3)}`;b.onclick=()=>{sel=i;mixSel=-1;modesUI();tableUI();};box.appendChild(b);});
+  const ms=$('mix');const cur=data.modes[sel];const opts=data.modes.map((md,i)=>[i,md]).filter(([i,md])=>cur&&i!==sel&&md.pol===cur.pol);
+  ms.innerHTML='<option value="-1">nothing</option>'+opts.map(([i,md])=>`<option value="${i}">${md.pol}${md.m}</option>`).join('');ms.value=String(mixSel);
+  ms.disabled=!opts.length;zInfo();legendX();}
+$('mix').addEventListener('change',e=>{mixSel=+e.target.value;if(mixSel>=0&&zView==='wave'){} zInfo();});
+function tableUI(){const tb=$('tbody');tb.innerHTML='';if(!data)return;
+  data.modes.forEach((md,i)=>{const tr=document.createElement('tr');if(i===sel)tr.className='sel';const ng=ngs&&isFinite(ngs[i])?ngs[i].toFixed(3):'…';
+    tr.innerHTML=`<td><span style="color:${polC(md.pol)}">●</span> ${md.pol==='TE'?'quasi-TE':'quasi-TM'}${md.m}</td><td>${md.neff.toFixed(4)}</td><td>${Math.round(g.lam/md.neff*1000)} nm</td><td>${(md.gamma*100).toFixed(0)} %</td><td>${md.aeff.toFixed(3)} µm²</td>`;
+    tr.onclick=()=>{sel=i;mixSel=-1;modesUI();tableUI();};tb.appendChild(tr);});}
+function zInfo(){if(!data||!data.modes[sel]){$('zInfo').textContent='';$('beat').textContent='';return;}const md=data.modes[sel];
+  $('zInfo').textContent=`seen from above · wavelength in the guide ${Math.round(g.lam/md.neff*1000)} nm`;
+  if(mixSel>=0){const o=data.modes[mixSel];const Lb=g.lam/Math.abs(md.neff-o.neff);$('beat').innerHTML=`Beat length <b>${Lb>=100?Lb.toFixed(0):Lb.toFixed(2)} µm</b>`;}else $('beat').textContent='';}
+function legendX(){const md=data&&data.modes[sel];if(!md){$('legX').innerHTML='';return;}
+  $('legX').innerHTML=(xView==='anim'?`<span><i class="ramp" style="background:linear-gradient(90deg,var(--fneg),var(--fmid),var(--fpos))"></i>E${md.pol==='TE'?'<sub>x</sub>':'<sub>y</sub>'} at one instant</span><span>arrows: direction of E (${md.pol==='TE'?'sideways':'up and down'})</span>`
+    :`<span><i class="ramp" style="background:linear-gradient(90deg,var(--fmid),var(--fpos),var(--hot))"></i>|E|², time-averaged</span>`)+`<span><i class="sw" style="background:var(--edge)"></i>core outline</span><span>${Math.round(md.gamma*100)} % of |E|² in the core</span>`;}
+[['vAnim','anim'],['vInt','int']].forEach(([id,v])=>$(id).onclick=()=>{xView=v;$('vAnim').setAttribute('aria-pressed',v==='anim');$('vInt').setAttribute('aria-pressed',v==='int');legendX();});
+[['zWave','wave'],['zInt','int']].forEach(([id,v])=>$(id).onclick=()=>{zView=v;$('zWave').setAttribute('aria-pressed',v==='wave');$('zInt').setAttribute('aria-pressed',v==='int');});
+
+// ---------- drawing helpers ----------
+function prep(cv){const r=cv.getBoundingClientRect(),dpr=window.devicePixelRatio||1;const W=Math.max(1,Math.round(r.width*dpr)),H=Math.max(1,Math.round(r.height*dpr));
+  if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;}const ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,r.width,r.height);return {ctx,W:r.width,H:r.height};}
+const off=document.createElement('canvas'),oc=off.getContext('2d');
+function blit(ctx,dx,dy,dw,dh,nx,ny,fill){off.width=nx;off.height=ny;const im=oc.createImageData(nx,ny);
+  for(let r=0;r<ny;r++)for(let c=0;c<nx;c++){const col=fill(c,r);const k=4*(r*nx+c);im.data[k]=col[0];im.data[k+1]=col[1];im.data[k+2]=col[2];im.data[k+3]=255;}
+  oc.putImageData(im,0,0);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(off,dx,dy,dw,dh);}
+function outline(ctx,X,Y){ctx.strokeStyle=C.edge;ctx.lineWidth=1.5;ctx.globalAlpha=0.85;ctx.beginPath();
+  if(g.type==='rib'){ctx.moveTo(X(-99),Y(g.slab));ctx.lineTo(X(-g.w/2),Y(g.slab));ctx.lineTo(X(-g.w/2),Y(g.h));ctx.lineTo(X(g.w/2),Y(g.h));ctx.lineTo(X(g.w/2),Y(g.slab));ctx.lineTo(X(99),Y(g.slab));}
+  else{ctx.rect(X(-g.w/2),Y(g.h),X(g.w/2)-X(-g.w/2),Y(0)-Y(g.h));}
+  ctx.stroke();ctx.setLineDash([4,4]);ctx.globalAlpha=0.5;ctx.beginPath();ctx.moveTo(X(-99),Y(0));ctx.lineTo(X(99),Y(0));ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;}
+
+// ---------- cross-section ----------
+function drawX(){const {ctx,W,H}=prep($('cX'));if(!data||!data.modes[sel]){ctx.fillStyle=C.muted;ctx.font=`13px ${C.mono}`;ctx.textAlign='center';ctx.fillText(data?'No guided mode to show':'Solving…',W/2,H/2);return;}
+  const G=data.grid,md=data.modes[sel],f=md.field;const Lx=G.nx*G.dx,Ly=G.ny*G.dy;
+  // fit physical box into canvas keeping aspect, with a margin for axes
+  const M={l:40,r:10,t:10,b:28};const pw=W-M.l-M.r,ph=H-M.t-M.b;const s=Math.min(pw/Lx,ph/Ly);const bw=Lx*s,bh=Ly*s;const ox=M.l+(pw-bw)/2,oy=M.t+(ph-bh)/2;
+  const X=x=>ox+(x-G.x0)*s,Y=y=>oy+bh-(y-G.y0)*s;
+  let mx=1e-12;for(const v of f)mx=Math.max(mx,Math.abs(v));const ct=Math.cos(phase);
+  if(xView==='anim')blit(ctx,ox,oy,bw,bh,G.nx,G.ny,(c,r)=>divc(f[c*G.ny+(G.ny-1-r)]/mx*ct));
+  else blit(ctx,ox,oy,bw,bh,G.nx,G.ny,(c,r)=>heat((f[c*G.ny+(G.ny-1-r)]/mx)**2));
+  outline(ctx,X,Y);
+  if(xView==='anim'){ // polarization arrows
+    const stp=Math.max(2,Math.round(Math.max(G.nx,G.ny)/22));const L=stp*G.dx*s*0.45;ctx.strokeStyle=C.fg;ctx.fillStyle=C.fg;ctx.lineWidth=1.3;
+    for(let c=Math.floor(stp/2);c<G.nx;c+=stp)for(let r=Math.floor(stp/2);r<G.ny;r+=stp){const v=f[c*G.ny+r]/mx;if(Math.abs(v)<0.12)continue;const a=v*ct;const len=L*a;
+      const cx=X(G.x0+(c+0.5)*G.dx),cy=Y(G.y0+(r+0.5)*G.dy);const dx=md.pol==='TE'?len:0,dy=md.pol==='TE'?0:-len;
+      ctx.globalAlpha=Math.min(1,0.25+Math.abs(v));ctx.beginPath();ctx.moveTo(cx-dx,cy-dy);ctx.lineTo(cx+dx,cy+dy);ctx.stroke();
+      if(Math.abs(len)>2){const ux=dx/Math.abs(len||1),uy=dy/Math.abs(len||1);ctx.beginPath();ctx.moveTo(cx+dx,cy+dy);ctx.lineTo(cx+dx-ux*4-uy*3,cy+dy-uy*4+ux*3);ctx.lineTo(cx+dx-ux*4+uy*3,cy+dy-uy*4-ux*3);ctx.closePath();ctx.fill();}}
+    ctx.globalAlpha=1;}
+  // axes
+  ctx.font=`11px ${C.mono}`;ctx.fillStyle=C.muted;ctx.strokeStyle=C.line;ctx.lineWidth=1;ctx.strokeRect(ox,oy,bw,bh);
+  const tick=Lx>3?1:Lx>1.5?0.5:0.25;ctx.textAlign='center';ctx.textBaseline='top';
+  for(let v=Math.ceil(G.x0/tick)*tick;v<=G.x0+Lx+1e-9;v+=tick){ctx.beginPath();ctx.moveTo(X(v),oy+bh);ctx.lineTo(X(v),oy+bh+4);ctx.stroke();ctx.fillText(+v.toFixed(2),X(v),oy+bh+6);}
+  ctx.textAlign='right';ctx.textBaseline='middle';for(let v=Math.ceil(G.y0/tick)*tick;v<=G.y0+Ly+1e-9;v+=tick){ctx.beginPath();ctx.moveTo(ox-4,Y(v));ctx.lineTo(ox,Y(v));ctx.stroke();ctx.fillText(+v.toFixed(2),ox-6,Y(v));}
+  ctx.textAlign='left';ctx.textBaseline='top';ctx.fillStyle=C.fg;ctx.fillText(`${md.pol}${md.m} · n_eff ${md.neff.toFixed(4)}`,ox+6,oy+6);
+  const cl=CLADS.find(c=>c[1]===g.nClad),sb=CLADS.find(c=>c[1]===g.nSub);ctx.fillStyle=C.muted;ctx.textAlign='right';
+  ctx.fillText(cl?cl[0].split(' ')[0]:'cladding',ox+bw-6,oy+6);ctx.textBaseline='bottom';ctx.fillText(sb?sb[0].split(' ')[0]:'substrate',ox+bw-6,oy+bh-6);
+  ctx.textAlign='center';ctx.textBaseline='bottom';ctx.fillText('x (µm)',ox+bw/2,H-1);}
+
+// ---------- propagation (top view) ----------
+function drawZ(){const {ctx,W,H}=prep($('cZ'));if(!data||!data.modes[sel])return;const G=data.grid,md=data.modes[sel];
+  const yc=g.type==='rib'?(g.slab+g.h)/2:g.h/2;const r=Math.max(0,Math.min(G.ny-1,Math.round((yc-G.y0)/G.dy-0.5)));
+  const cut=f=>{const a=new Float64Array(G.nx);for(let c=0;c<G.nx;c++)a[c]=f[c*G.ny+r];return a;};
+  const parts=[[cut(md.field),md.neff]];if(mixSel>=0&&data.modes[mixSel])parts.push([cut(data.modes[mixSel].field),data.modes[mixSel].neff]);
+  // equal power in each mode: normalize each cut by its own full-field norm
+  const norm=m=>{let s=0;for(const v of m.field)s+=v*v;return Math.sqrt(s);};
+  const amps=[1/norm(md)].concat(mixSel>=0?[1/norm(data.modes[mixSel])]:[]);
+  const k0=2*Math.PI/g.lam;let Lz;if(parts.length>1){Lz=Math.min(2*g.lam/Math.abs(parts[0][1]-parts[1][1]),400);}else Lz=Math.max(4,8*g.lam/md.neff);
+  const M={l:40,r:10,t:8,b:26},pw=W-M.l-M.r,ph=H-M.t-M.b;const xr=Math.min(G.nx*G.dx,Math.max(g.w*2.6,1.6));const NZ=Math.min(600,Math.round(pw));const NXr=Math.max(40,Math.round(ph/2));
+  const ppw=pw/(Lz*md.neff/g.lam);const wave=zView==='wave'&&ppw>=5;
+  const fAt=(arr,x)=>{const c=(x-G.x0)/G.dx-0.5;const i=Math.max(0,Math.min(G.nx-2,Math.floor(c))),t=Math.max(0,Math.min(1,c-i));return arr[i]*(1-t)+arr[i+1]*t;};
+  let mx=1e-12;const prof=[];for(let j=0;j<NXr;j++){const x=xr/2-xr*(j+0.5)/NXr;const vals=parts.map(([a],k)=>fAt(a,x)*amps[k]);prof.push(vals);vals.forEach(v=>mx=Math.max(mx,Math.abs(v)));}
+  const ph0=phase;
+  blit(ctx,M.l,M.t,pw,ph,NZ,NXr,(c,j)=>{const z=Lz*(c+0.5)/NZ;const vals=prof[j];
+    if(wave){let e=0;parts.forEach(([,n],k)=>{e+=vals[k]*Math.cos(k0*n*z-ph0);});return divc(e/(mx*parts.length)*1.2);}
+    let I=0;parts.forEach((p,k)=>I+=vals[k]*vals[k]);if(parts.length>1)I+=2*vals[0]*vals[1]*Math.cos(k0*(parts[0][1]-parts[1][1])*z);return heat(I/(mx*mx*parts.length*1.6));});
+  const Yx=x=>M.t+ph*(0.5-x/xr);ctx.strokeStyle=C.edge;ctx.globalAlpha=0.7;ctx.lineWidth=1.2;[-g.w/2,g.w/2].forEach(x=>{ctx.beginPath();ctx.moveTo(M.l,Yx(x));ctx.lineTo(M.l+pw,Yx(x));ctx.stroke();});ctx.globalAlpha=1;
+  ctx.strokeStyle=C.line;ctx.strokeRect(M.l,M.t,pw,ph);ctx.font=`11px ${C.mono}`;ctx.fillStyle=C.muted;
+  const zt=[1,2,5,10,20,50,100,200].find(t=>Lz/t<=8)||100;ctx.textAlign='center';ctx.textBaseline='top';for(let z=0;z<=Lz+1e-9;z+=zt){const x=M.l+z/Lz*pw;ctx.beginPath();ctx.moveTo(x,M.t+ph);ctx.lineTo(x,M.t+ph+4);ctx.stroke();ctx.fillText(z,x,M.t+ph+6);}
+  ctx.textBaseline='bottom';ctx.fillText('z (µm), propagation →',M.l+pw/2,H-1);
+  ctx.textAlign='right';ctx.textBaseline='middle';[-xr/2*0.8,0,xr/2*0.8].forEach(x=>ctx.fillText(+x.toFixed(1),M.l-6,Yx(x)));
+  if(zView==='wave'&&!wave){ctx.fillStyle=C.panel;ctx.globalAlpha=0.85;ctx.fillRect(M.l+6,M.t+6,300,18);ctx.globalAlpha=1;ctx.fillStyle=C.fg;ctx.textAlign='left';ctx.textBaseline='top';ctx.fillText('Too many oscillations to draw: showing intensity',M.l+10,M.t+9);}}
+
+// ---------- sweep chart ----------
+function drawSweep(){const {ctx,W,H}=prep($('cSweep'));const M={l:52,r:12,t:10,b:30},pw=W-M.l-M.r,ph=H-M.t-M.b;
+  if(!sweep||!sweep.pts.length){ctx.fillStyle=C.muted;ctx.font=`13px ${C.mono}`;ctx.textAlign='center';ctx.fillText('Press "Sweep width" to trace each mode from cutoff upward.',W/2,H/2);return;}
+  const pts=sweep.pts.slice().sort((a,b)=>a.w-b.w);const ncl=Math.max(g.nClad,g.nSub);let hi=ncl+0.05;pts.forEach(p=>p.modes.forEach(m=>hi=Math.max(hi,m.neff)));
+  const lo=ncl-0.03*(hi-ncl+0.1);hi+=0.04*(hi-lo);const w0=sweep.ws[0],w1=sweep.ws[sweep.ws.length-1];
+  const X=v=>M.l+(v-w0)/(w1-w0)*pw,Y=v=>M.t+ph-(v-lo)/(hi-lo)*ph;
+  // single-mode shading
+  ctx.fillStyle=C.accent;ctx.globalAlpha=0.08;for(let i=0;i<pts.length;i++){const p=pts[i];const sm=!p.modes.some(m=>m.m>0)&&p.modes.length>0;if(!sm)continue;const a=i>0?(pts[i-1].w+p.w)/2:w0,b=i<pts.length-1?(pts[i+1].w+p.w)/2:w1;ctx.fillRect(X(a),M.t,X(b)-X(a),ph);}ctx.globalAlpha=1;
+  ctx.font=`11px ${C.mono}`;ctx.strokeStyle=C.grid;ctx.fillStyle=C.muted;ctx.lineWidth=1;ctx.textAlign='right';ctx.textBaseline='middle';
+  const yt=(hi-lo)>1?0.5:(hi-lo)>0.4?0.2:0.1;for(let v=Math.ceil(lo/yt)*yt;v<=hi;v+=yt){ctx.beginPath();ctx.moveTo(M.l,Y(v));ctx.lineTo(M.l+pw,Y(v));ctx.stroke();ctx.fillText(v.toFixed(yt<0.2?2:1),M.l-6,Y(v));}
+  const xt=(w1-w0)>2?0.5:0.2;ctx.textAlign='center';ctx.textBaseline='top';for(let v=Math.ceil(w0/xt)*xt;v<=w1+1e-9;v+=xt){ctx.beginPath();ctx.moveTo(X(v),M.t);ctx.lineTo(X(v),M.t+ph);ctx.stroke();ctx.fillText(v.toFixed(1),X(v),M.t+ph+6);}
+  ctx.textBaseline='bottom';ctx.fillText('width (µm)',M.l+pw/2,H-1);ctx.save();ctx.translate(12,M.t+ph/2);ctx.rotate(-Math.PI/2);ctx.textBaseline='middle';ctx.fillText('n_eff',0,0);ctx.restore();
+  ctx.strokeStyle=C.muted;ctx.setLineDash([2,3]);ctx.beginPath();ctx.moveTo(M.l,Y(ncl));ctx.lineTo(M.l+pw,Y(ncl));ctx.stroke();ctx.setLineDash([]);ctx.textAlign='left';ctx.textBaseline='bottom';ctx.fillText('cladding',M.l+4,Y(ncl)-2);
+  ['TE','TM'].forEach(pol=>{for(let m=0;m<4;m++){const ser=pts.map(p=>[p.w,(p.modes.find(x=>x.pol===pol&&x.m===m)||{}).neff]).filter(a=>a[1]);if(!ser.length)continue;
+    ctx.strokeStyle=pol==='TE'?C.te:C.tm;ctx.lineWidth=2-m*0.3;ctx.globalAlpha=1-m*0.18;if(pol==='TM')ctx.setLineDash([6,4]);ctx.beginPath();ser.forEach(([x,y],i)=>i?ctx.lineTo(X(x),Y(y)):ctx.moveTo(X(x),Y(y)));ctx.stroke();ctx.setLineDash([]);
+    const [lx,ly]=ser[ser.length-1];ctx.fillStyle=pol==='TE'?C.te:C.tm;ctx.textAlign='right';ctx.textBaseline='bottom';ctx.fillText(pol+m,X(lx)-2,Y(ly)-3);ctx.globalAlpha=1;}});
+  if(g.w>=w0&&g.w<=w1){ctx.strokeStyle=C.fg;ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(X(g.w),M.t);ctx.lineTo(X(g.w),M.t+ph);ctx.stroke();ctx.setLineDash([]);}
+  if(data)data.modes.forEach(md=>{if(g.w<w0||g.w>w1)return;ctx.fillStyle=polC(md.pol);ctx.beginPath();ctx.arc(X(g.w),Y(md.neff),4,0,7);ctx.fill();});
+  ctx.strokeStyle=C.line;ctx.strokeRect(M.l,M.t,pw,ph);}
+
+// ---------- loop ----------
+let reduce=false;try{reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(e){}
+let last=0;function loop(t){const dt=last?Math.min(0.05,(t-last)/1000):0;last=t;if(!reduce)phase+=dt*2*Math.PI*0.45;drawX();drawZ();requestAnimationFrame(loop);}
+const refresh=()=>{readCss();modesUI();drawSweep();};
+try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',refresh);}catch(e){}
+new MutationObserver(refresh).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+new ResizeObserver(()=>{if(C)drawSweep();}).observe(document.querySelector('.wrap'));
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{if(C)refresh();});
+readCss();syncUI();solve();drawSweep();requestAnimationFrame(loop);
+})();
+</script>

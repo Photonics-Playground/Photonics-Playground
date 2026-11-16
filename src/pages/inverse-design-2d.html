@@ -1,0 +1,405 @@
+<title>Inverse Design 2D</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: controls bar, then design map and animated field side by side (stacked on phones), then efficiency chart and explainer cards */
+:root{
+  --bg:#F3F5F8; --panel:#FFFFFF; --fg:#16212E; --muted:#5B6878; --line:#D9DFE7; --grid:#E6EAF0;
+  --accent:#2350C8; --lo:#E9EEF6; --hi:#1E3A78; --fneg:#2350C8; --fmid:#F7F8FA; --fpos:#D2492A; --edge:#16212E;
+  --p0:#2350C8; --p1:#D2492A; --p2:#14936B; --p3:#C08A12;
+  --f-display:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-body:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E141C; --panel:#151D28; --fg:#E4E9F0; --muted:#93A0B1; --line:#283444; --grid:#1F2A37;
+  --accent:#7DA2FF; --lo:#1A2431; --hi:#9DB8F5; --fneg:#5B8BFF; --fmid:#111821; --fpos:#FF7A55; --edge:#E4E9F0;
+  --p0:#7DA2FF; --p1:#FF8A6B; --p2:#4FD1A5; --p3:#F2C14E; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E141C; --panel:#151D28; --fg:#E4E9F0; --muted:#93A0B1; --line:#283444; --grid:#1F2A37;
+  --accent:#7DA2FF; --lo:#1A2431; --hi:#9DB8F5; --fneg:#5B8BFF; --fmid:#111821; --fpos:#FF7A55; --edge:#E4E9F0;
+  --p0:#7DA2FF; --p1:#FF8A6B; --p2:#4FD1A5; --p3:#F2C14E; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+header h1{font-family:var(--f-display);font-weight:700;font-size:clamp(1.6rem,3.6vw,2.3rem);letter-spacing:-.01em;margin:0;text-wrap:balance}
+header p{margin:6px 0 0;color:var(--muted);max-width:72ch}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
+.label{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+button{font:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.bar{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:flex-end}
+.group{display:flex;flex-direction:column;gap:6px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:.82rem;padding:5px 10px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--fg)}
+.chip:hover{border-color:var(--accent);color:var(--accent)}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.run{display:flex;gap:8px}
+.btn{padding:8px 16px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--fg);font-weight:600;font-size:.88rem}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel);min-width:112px}
+.btn:hover{border-color:var(--accent)}
+.slider{display:flex;flex-direction:column;gap:2px;min-width:150px}
+.slider .row{display:flex;justify-content:space-between;gap:8px;font-size:.85rem}
+.slider .row b{font-family:var(--f-mono);font-weight:500}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.toggle{display:flex;align-items:center;gap:8px;font-size:.88rem;font-weight:500;cursor:pointer;padding-bottom:4px}
+.toggle input{width:16px;height:16px;accent-color:var(--accent)}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
+@media (max-width:560px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.stats div{display:flex;flex-direction:column;gap:1px;min-width:0}
+.stats b{font-family:var(--f-mono);font-weight:500;font-size:1.05rem;font-variant-numeric:tabular-nums}
+.plot-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.plot-head h2{font-size:1rem;margin:0;font-weight:600}
+.plot-head span{font-size:.82rem;color:var(--muted)}
+.maps{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:760px){.maps{grid-template-columns:1fr}}
+.sq{width:100%;aspect-ratio:1/1;max-width:100%;display:block}
+canvas{display:block;width:100%}
+#cEff{height:230px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{border:0;background:transparent;color:var(--fg);padding:4px 10px;font-weight:600;font-size:.8rem}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--panel)}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:.8rem;color:var(--muted);margin-top:8px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:14px;height:10px;border-radius:2px;display:inline-block}
+.ramp{width:60px;height:10px;border-radius:2px;display:inline-block;background:linear-gradient(90deg,var(--fneg),var(--fmid),var(--fpos));border:1px solid var(--line)}
+.steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+@media (max-width:860px){.steps{grid-template-columns:1fr}}
+.steps h3{margin:4px 0 6px;font-size:1rem}
+.steps p{margin:0;color:var(--muted);font-size:.9rem}
+.steps .k{font-family:var(--f-mono);font-size:.75rem;color:var(--accent);font-weight:500}
+.eq{font-family:var(--f-mono);font-size:.8rem;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 9px;margin-top:8px;overflow-x:auto;white-space:nowrap}
+footer{color:var(--muted);font-size:.82rem}
+.busy{font-size:.82rem;color:var(--muted)}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Inverse Design 2D</h1>
+    <p>Instead of drawing a component by hand, say what it should do and let an optimizer find the shape. Pick a device, press Optimize, and watch 961 pixels of core material rearrange themselves until the light goes where you want it: around a corner, into two ports, sorted by color, or from one waveguide mode into another.</p>
+  </header>
+
+  <section class="panel" aria-label="Optimizer controls">
+    <div class="bar">
+      <div class="group">
+        <span class="label">1 · Choose a device</span>
+        <div class="chips" id="targets">
+          <button class="chip" data-t="bend">90° bend</button>
+          <button class="chip" data-t="split">1×2 splitter</button>
+          <button class="chip" data-t="demux">Color sorter (demux)</button>
+          <button class="chip" data-t="conv">Mode converter</button>
+          <button class="chip" data-t="sort">Mode sorter</button>
+        </div>
+      </div>
+      <div class="group">
+        <span class="label">2 · Optimize</span>
+        <div class="run">
+          <button class="btn primary" id="bRun">▶ Optimize</button>
+          <button class="btn" id="bStep">Step</button>
+          <button class="btn" id="bReset">Reset</button>
+        </div>
+      </div>
+      <div class="slider">
+        <div class="row"><label for="sFilt">Min. feature size</label><b id="vFilt"></b></div>
+        <input type="range" id="sFilt" min="0" max="3" step="1" value="1">
+      </div>
+      <label class="toggle"><input type="checkbox" id="tBin" checked>Make it fabricable (binarize)</label>
+    </div>
+    <div class="stats">
+      <div><span class="label">Iteration</span><b id="oIt">0</b></div>
+      <div><span class="label" id="oEffL">Transmission</span><b id="oEff">–</b></div>
+      <div><span class="label">Binary pixels</span><b id="oBin">–</b></div>
+      <div><span class="label">Solve time</span><b id="oMs">–</b></div>
+    </div>
+  </section>
+
+  <div class="maps">
+    <section class="panel">
+      <div class="plot-head"><h2>Design</h2>
+        <div class="seg" role="group" aria-label="Design view"><button id="vMat" aria-pressed="true">Material</button><button id="vGrad" aria-pressed="false">Gradient</button></div></div>
+      <canvas id="cDesign" class="sq" aria-label="Material distribution in the design region"></canvas>
+      <div class="legend" id="legD"></div>
+    </section>
+    <section class="panel">
+      <div class="plot-head"><h2>Field E<sub>z</sub></h2>
+        <div class="seg" role="group" aria-label="Input shown" id="lamSeg" hidden><button id="lam0" aria-pressed="true">1310 nm</button><button id="lam1" aria-pressed="false">1550 nm</button></div>
+        <span id="lamTxt">λ = 1550 nm</span></div>
+      <canvas id="cField" class="sq" aria-label="Animated electric field propagating through the device"></canvas>
+      <div class="legend"><span><i class="ramp"></i>field, −/0/+</span><span><i class="sw" style="background:var(--edge)"></i>material outline</span><span class="busy" id="busy"></span></div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <div class="plot-head"><h2>Efficiency</h2><span>power in the target mode of each output</span></div>
+    <canvas id="cEff" aria-label="Output efficiency versus iteration"></canvas>
+    <div class="legend" id="legE"></div>
+  </section>
+
+  <section class="panel">
+    <div class="plot-head"><h2>What is happening</h2></div>
+    <div class="steps">
+      <div><span class="k">FORWARD SIMULATION</span><h3>Solving Maxwell in 2D</h3>
+        <p>The domain is a 69×69 grid with 80 nm pixels. Each iteration solves the frequency-domain wave equation directly (FDFD), with absorbing edges so light leaves cleanly. The source s launches the input mode.</p>
+        <div class="eq">∇²E<sub>fwd</sub> + k₀² ε(r) E<sub>fwd</sub> = −s</div></div>
+      <div><span class="k">OBJECTIVE</span><h3>Light in the right mode</h3>
+        <p>The figure of merit (FOM) is the power coupled into a chosen mode of each output waveguide, divided by the input power. For the demultiplexer and the mode sorter, light reaching the wrong port is penalized.</p>
+        <div class="eq">FOM = |⟨φ<sub>out</sub>, E<sub>fwd</sub>⟩|² / (κ<sub>out</sub> · P<sub>in</sub>)</div></div>
+      <div><span class="k">ADJOINT</span><h3>Two solves, 961 gradients</h3>
+        <p>One extra simulation, the adjoint simulation with a source placed at the output, gives the sensitivity of every pixel at once. Switch the design view to Gradient to see where adding material helps. <a href="how-inverse-design-works.html">How Inverse Design Works</a> derives it step by step.</p>
+        <div class="eq">∂FOM/∂εᵢ ∝ Re( E<sub>adj,i</sub> · E<sub>fwd,i</sub> )</div></div>
+      <div><span class="k">FABRICATION</span><h3>Feature size and binarization</h3>
+        <p>A blur filter sets the minimum feature size, and a sharpening projection pushes each pixel to core or cladding. Larger filters give smoother, more manufacturable shapes at a small cost in efficiency.</p></div>
+      <div><span class="k">SYMMETRY</span><h3>Built-in constraints</h3>
+        <p>The splitter design is forced to be mirror-symmetric, which guarantees an exact 50/50 split. The mode converter needs the opposite: it must break the symmetry to turn the even TE₀ mode into the odd TE₁ mode.</p></div>
+      <div><span class="k">SCALING UP</span><h3>From toy to real devices</h3>
+        <p>Real designs use 3D solvers like FDTD with millions of voxels on GPUs, but the loop is the same: simulate, run the adjoint, update, repeat.</p></div>
+    </div>
+  </section>
+
+  <footer><b>Model and accuracy.</b> 2D scalar model (E out of plane). Core n = 2.2, cladding n = 1.45, waveguide widths 400 nm (single-mode) and 880 nm (two-mode), design region 2.48 × 2.48 µm. Optimizer: Adam with cone filter and tanh projection. Runs entirely on your device. Accuracy: cross-checked against an independent solver with perfectly matched layers. On this coarse 80 nm grid, efficiencies are within about 3 percentage points of a converged 20 nm simulation, except for the color demultiplexer, whose wavelength selectivity makes it about 10 points optimistic.</footer>
+</div>
+
+<script type="text/plain" id="wsrc">
+// 2D scalar FDFD inverse design worker (TE, Ez out of plane)
+const DXU=0.08, A=12, ST=7, D=31;
+const NX=A+ST+D+ST+A, NY=NX, N=NX*NY, BW=NX, LDA=2*BW+1;
+const NCORE=2.2, NCLAD=1.45, EPSC=NCLAD*NCLAD, EPSH=NCORE*NCORE;
+const C0=A+ST+Math.floor(D/2), D0=A+ST, OFF=9;
+const idx=(x,y)=>y*NX+x;
+const MON=NX-A-3, SRC=A+1, MROW=NY-A-3;
+
+// guided slab mode m (0 even, 1 odd) of a core (2hw+1) cells wide
+function slabProfile(lam,hw,m){
+  const a=(2*hw+1)*DXU/2, k0=2*Math.PI/lam, V=a*k0*Math.sqrt(EPSH-EPSC);
+  let lo=m*Math.PI/2+1e-9, hi=Math.min((m+1)*Math.PI/2,V)-1e-9;
+  const f=u=>{const w=Math.sqrt(Math.max(V*V-u*u,0));return (m===0?u*Math.tan(u):-u/Math.tan(u))-w;};
+  for(let i=0;i<80;i++){const u=(lo+hi)/2; if(f(u)>0)hi=u; else lo=u;}
+  const u=(lo+hi)/2, w=Math.sqrt(V*V-u*u);
+  if(m===0) return t=>{const at=Math.abs(t);return at<=a?Math.cos(u*t/a):Math.cos(u)*Math.exp(-w*(at-a)/a);};
+  return t=>{const at=Math.abs(t);return at<=a?Math.sin(u*t/a):Math.sign(t)*Math.sin(u)*Math.exp(-w*(at-a)/a);};
+}
+// port: {axis:'col'|'row', pos, center, hw, m}
+function monitorVec(port,lam){const prof=slabProfile(lam,port.hw,port.m),R=port.hw+9,v=[];
+  for(let o=-R;o<=R;o++){const s=port.center+o;const i=port.axis==='col'?idx(port.pos,s):idx(s,port.pos);v.push([i,prof(o*DXU)]);}return v;}
+function sourceVec(ex){const br=new Float64Array(N),bi=new Float64Array(N),prof=slabProfile(ex.lam,ex.hw,ex.m),R=ex.hw+9;
+  for(let o=-R;o<=R;o++)br[idx(SRC,C0+o)]=prof(o*DXU);return [br,bi];}
+function rect(e,x0,x1,y0,y1){for(let y=y0;y<=y1&&y<NY;y++)for(let x=x0;x<x1;x++)e[idx(x,y)]=EPSH;}
+const inL=(e,hw)=>rect(e,0,D0,C0-hw,C0+hw);
+const outR=(e,c,hw)=>rect(e,D0+D,NX,c-hw,c+hw);
+const P=(center,hw,m,axis='col',pos=MON)=>({axis,pos,center,hw,m});
+
+const TARGETS={
+  bend:{ex:[{lam:1.55,hw:2,m:0}],wg:e=>{inL(e,2);rect(e,C0-2,C0+3,D0+D,NY);},
+    terms:[{e:0,port:P(C0,2,0,'row',MROW),s:1}],sym:false},
+  split:{ex:[{lam:1.55,hw:2,m:0}],wg:e=>{inL(e,2);outR(e,C0-OFF,2);outR(e,C0+OFF,2);},
+    terms:[{e:0,port:P(C0-OFF,2,0),s:1},{e:0,port:P(C0+OFF,2,0),s:1}],sym:true},
+  demux:{ex:[{lam:1.31,hw:2,m:0},{lam:1.55,hw:2,m:0}],wg:e=>{inL(e,2);outR(e,C0-OFF,2);outR(e,C0+OFF,2);},
+    terms:[{e:0,port:P(C0-OFF,2,0),s:1},{e:1,port:P(C0+OFF,2,0),s:1},{e:0,port:P(C0+OFF,2,0),s:-0.5},{e:1,port:P(C0-OFF,2,0),s:-0.5}],sym:false},
+  conv:{ex:[{lam:1.55,hw:5,m:0}],wg:e=>{inL(e,5);outR(e,C0,5);},
+    terms:[{e:0,port:P(C0,5,1),s:1},{e:0,port:P(C0,5,0),s:0}],sym:false},
+  sort:{ex:[{lam:1.55,hw:5,m:0},{lam:1.55,hw:5,m:1}],wg:e=>{inL(e,5);outR(e,C0-OFF,2);outR(e,C0+OFF,2);},
+    terms:[{e:0,port:P(C0-OFF,2,0),s:1},{e:1,port:P(C0+OFF,2,0),s:1},{e:0,port:P(C0+OFF,2,0),s:-0.5},{e:1,port:P(C0-OFF,2,0),s:-0.5}],sym:false}
+};
+
+const epsI=new Float64Array(N);
+for(let y=0;y<NY;y++)for(let x=0;x<NX;x++){const d=Math.max(A-x,x-(NX-1-A),A-y,y-(NY-1-A),0)/A;epsI[idx(x,y)]=6*d*d;}
+
+const Mre=new Float64Array(N*LDA), Mim=new Float64Array(N*LDA);
+function factor(epsR,lam){
+  const q=Math.pow(2*Math.PI/lam*DXU,2);
+  Mre.fill(0);Mim.fill(0);
+  for(let y=0;y<NY;y++)for(let x=0;x<NX;x++){const i=idx(x,y),b=i*LDA+BW;
+    Mre[b]=-4+q*epsR[i];Mim[b]=q*epsI[i];
+    if(x>0)Mre[b-1]=1; if(x<NX-1)Mre[b+1]=1; if(y>0)Mre[b-BW]=1; if(y<NY-1)Mre[b+BW]=1;}
+  for(let k=0;k<N;k++){
+    const bk=k*LDA+BW, pr=Mre[bk], pi=Mim[bk], pd=pr*pr+pi*pi, ir=pr/pd, ii=-pi/pd;
+    const iend=Math.min(N-1,k+BW), rowK=k*LDA+BW-k;
+    for(let i=k+1;i<=iend;i++){
+      const rowI=i*LDA+BW-i, bi=rowI+k; const ar=Mre[bi], ai=Mim[bi]; if(ar===0&&ai===0)continue;
+      const lr=ar*ir-ai*ii, li=ar*ii+ai*ir; Mre[bi]=lr; Mim[bi]=li;
+      for(let j=k+1;j<=iend;j++){const ur=Mre[rowK+j],ui=Mim[rowK+j]; if(ur===0&&ui===0)continue;
+        Mre[rowI+j]-=lr*ur-li*ui; Mim[rowI+j]-=lr*ui+li*ur;}
+    }
+  }
+  return q;
+}
+function solve(br,bi){
+  for(let i=0;i<N;i++){const j0=Math.max(0,i-BW),row=i*LDA+BW-i;let sr=br[i],si=bi[i];
+    for(let j=j0;j<i;j++){const lr=Mre[row+j],li=Mim[row+j];sr-=lr*br[j]-li*bi[j];si-=lr*bi[j]+li*br[j];}br[i]=sr;bi[i]=si;}
+  for(let i=N-1;i>=0;i--){const j1=Math.min(N-1,i+BW),row=i*LDA+BW-i;let sr=br[i],si=bi[i];
+    for(let j=i+1;j<=j1;j++){const ur=Mre[row+j],ui=Mim[row+j];sr-=ur*br[j]-ui*bi[j];si-=ur*bi[j]+ui*br[j];}
+    const dr=Mre[row+i],di=Mim[row+i],dd=dr*dr+di*di;br[i]=(sr*dr+si*di)/dd;bi[i]=(si*dr-sr*di)/dd;}
+}
+function overlap(Er,Ei,mon){let cr=0,ci=0;for(const[i,v] of mon){cr+=v*Er[i];ci+=v*Ei[i];}return [cr,ci];}
+function flux(Er,Ei,col){let p=0;for(let y=A;y<NY-A;y++){const i=idx(col,y);const dr=(Er[idx(col+1,y)]-Er[idx(col-1,y)]),di=(Ei[idx(col+1,y)]-Ei[idx(col-1,y)]);p+=Er[i]*di-Ei[i]*dr;}return p;}
+
+// ---- calibration: source power and mode-overlap scale, from straight guides ----
+const calCache={};
+function calib(lam,hw,m){const key=lam+'|'+hw+'|'+m;if(calCache[key])return calCache[key];
+  const e=new Float64Array(N).fill(EPSC);rect(e,0,NX,C0-hw,C0+hw);factor(e,lam);
+  const [br,bi]=sourceVec({lam,hw,m});solve(br,bi);const F=flux(br,bi,MON);
+  const [cr,ci]=overlap(br,bi,monitorVec(P(C0,hw,m),lam));
+  return calCache[key]={flux:F,kappa:(cr*cr+ci*ci)/F};}
+
+// ---- state ----
+let T=null,tname='bend',epsBase=null,norms=[];
+const ND=D*D; let x=new Float64Array(ND),mA=new Float64Array(ND),vA=new Float64Array(ND);
+let rf=new Float64Array(ND),rp=new Float64Array(ND),grad=new Float64Array(ND);
+let it=0,beta=1,bin=true,filt=1,running=false,fields=[],effs=[],J=0,lastMs=0;
+function setTarget(name){tname=name;T=TARGETS[name];
+  norms=T.terms.map(tm=>{const ex=T.ex[tm.e];return calib(ex.lam,ex.hw,ex.m).flux*calib(ex.lam,tm.port.hw,tm.port.m).kappa;});
+  epsBase=new Float64Array(N).fill(EPSC);T.wg(epsBase);reset();}
+function reset(){for(let i=0;i<ND;i++){x[i]=0.5;mA[i]=0;vA[i]=0;}it=0;beta=bin?1:0;grad.fill(0);evaluate(false);}
+function kern(r){const k=[];if(r===0)return [[0,0,1]];let s=0;for(let a=-r;a<=r;a++)for(let b=-r;b<=r;b++){const w=Math.max(0,r+1-Math.hypot(a,b));if(w>0){k.push([a,b,w]);s+=w;}}return k.map(([a,b,w])=>[a,b,w/s]);}
+function params(){
+  const K=kern(filt);
+  for(let j=0;j<D;j++)for(let i=0;i<D;i++){let v=0,ws=0;for(const[a,b,w] of K){const ii=i+a,jj=j+b;if(ii<0||jj<0||ii>=D||jj>=D)continue;v+=w*x[jj*D+ii];ws+=w;}rf[j*D+i]=v/ws;}
+  if(beta>0){const den=Math.tanh(beta*0.5)*2;for(let k=0;k<ND;k++)rp[k]=(Math.tanh(beta*0.5)+Math.tanh(beta*(rf[k]-0.5)))/den;}else rp.set(rf);
+  const e=Float64Array.from(epsBase);for(let j=0;j<D;j++)for(let i=0;i<D;i++)e[idx(D0+i,D0+j)]=EPSC+rp[j*D+i]*(EPSH-EPSC);return e;
+}
+function evaluate(withGrad){
+  const t0=Date.now();const eps=params();const gE=new Float64Array(N);fields=new Array(T.ex.length);effs=new Array(T.terms.length).fill(0);J=0;
+  const lams=[...new Set(T.ex.map(e=>e.lam))];
+  for(const lam of lams){
+    const q=factor(eps,lam);
+    T.ex.forEach((ex,ei)=>{if(ex.lam!==lam)return;const [Er,Ei]=sourceVec(ex);solve(Er,Ei);fields[ei]=[Er,Ei];
+      T.terms.forEach((tm,ti)=>{if(tm.e!==ei)return;const mon=monitorVec(tm.port,lam);const [cr,ci]=overlap(Er,Ei,mon);const Pw=(cr*cr+ci*ci)/norms[ti];
+        effs[ti]=Pw;J+=tm.s*Pw;
+        if(withGrad&&tm.s!==0){const lr=new Float64Array(N),li=new Float64Array(N);for(const[i,v] of mon)lr[i]=v;solve(lr,li);
+          for(let j=0;j<D;j++)for(let i=0;i<D;i++){const n=idx(D0+i,D0+j);
+            const dr=-q*(Er[n]*lr[n]-Ei[n]*li[n]), di=-q*(Er[n]*li[n]+Ei[n]*lr[n]);
+            gE[n]+=tm.s*2*(cr*dr+ci*di)/norms[ti];}}});
+    });
+  }
+  if(withGrad){
+    const gp=new Float64Array(ND);for(let j=0;j<D;j++)for(let i=0;i<D;i++)gp[j*D+i]=gE[idx(D0+i,D0+j)]*(EPSH-EPSC);
+    if(beta>0){const den=Math.tanh(beta*0.5)*2;for(let k=0;k<ND;k++){const t=Math.tanh(beta*(rf[k]-0.5));gp[k]*=beta*(1-t*t)/den;}}
+    const K=kern(filt);grad.fill(0);
+    for(let j=0;j<D;j++)for(let i=0;i<D;i++){let ws=0;for(const[a,b,w] of K){const ii=i+a,jj=j+b;if(ii<0||jj<0||ii>=D||jj>=D)continue;ws+=w;}
+      for(const[a,b,w] of K){const ii=i+a,jj=j+b;if(ii<0||jj<0||ii>=D||jj>=D)continue;grad[jj*D+ii]+=w/ws*gp[j*D+i];}}
+    if(T.sym){for(let j=0;j<D;j++)for(let i=0;i<D;i++){const m=(D-1-j)*D+i;if(m<=j*D+i)continue;const a=(grad[j*D+i]+grad[m])/2;grad[j*D+i]=a;grad[m]=a;}}
+  }
+  lastMs=Date.now()-t0;
+}
+function step(){
+  evaluate(true);
+  const lr=0.05,b1=0.9,b2=0.99,t=it+1;
+  for(let k=0;k<ND;k++){mA[k]=b1*mA[k]+(1-b1)*grad[k];vA[k]=b2*vA[k]+(1-b2)*grad[k]*grad[k];
+    const mh=mA[k]/(1-Math.pow(b1,t)),vh=vA[k]/(1-Math.pow(b2,t));x[k]=Math.min(1,Math.max(0,x[k]+lr*mh/(Math.sqrt(vh)+1e-8)));}
+  it++; if(bin&&it%20===0&&beta<48)beta=Math.min(48,beta*1.5);
+}
+function post(){
+  const M=NX-2*A, crop=(arr)=>{const o=new Float32Array(M*M);for(let y=0;y<M;y++)for(let xx=0;xx<M;xx++)o[y*M+xx]=arr[idx(A+xx,A+y)];return o;};
+  const eps=params(); const en=new Float32Array(M*M);for(let y=0;y<M;y++)for(let xx=0;xx<M;xx++)en[y*M+xx]=(eps[idx(A+xx,A+y)]-EPSC)/(EPSH-EPSC);
+  self.postMessage({type:'state',it,J,effs,target:tname,M,D0:D0-A,D,eps:en,grad:Float32Array.from(grad),
+    fields:fields.map(([r,i])=>[crop(r),crop(i)]),ms:lastMs,running,beta});
+}
+function loop(){ if(!running)return; step(); evaluate(false); post(); if(it>=400){running=false;post();return;} setTimeout(loop,0); }
+self.onmessage=e=>{const m=e.data;
+  if(m.cmd==='target'){setTarget(m.name);post();}
+  else if(m.cmd==='reset'){reset();post();}
+  else if(m.cmd==='run'){if(!running){running=true;loop();}}
+  else if(m.cmd==='pause'){running=false;post();}
+  else if(m.cmd==='step'){running=false;step();evaluate(false);post();}
+  else if(m.cmd==='filt'){filt=m.v;evaluate(false);post();}
+  else if(m.cmd==='bin'){bin=m.v;beta=bin?Math.max(1,beta||1):0;evaluate(false);post();}
+};
+
+</script>
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const w=new Worker(URL.createObjectURL(new Blob([$('wsrc').textContent],{type:'text/javascript'})));
+let st=null,running=false,view='mat',lamSel=0,phase=0,hist=[],filt=1,target='bend';
+const NAMES={bend:['Output'],split:['Upper','Lower'],demux:['1310 → upper','1550 → lower','1310 leak','1550 leak'],conv:['TE₁ out','TE₀ left over'],sort:['TE₀ → upper','TE₁ → lower','TE₀ leak','TE₁ leak']};
+const SEGL={demux:['1310 nm','1550 nm'],sort:['TE₀ in','TE₁ in']};
+
+let C=null;
+function hex(h){h=h.replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
+function readCss(){const s=getComputedStyle(document.documentElement),g=k=>s.getPropertyValue(k).trim();
+  C={fg:g('--fg'),muted:g('--muted'),line:g('--line'),grid:g('--grid'),panel:g('--panel'),accent:g('--accent'),mono:g('--f-mono'),
+    lo:hex(g('--lo')),hi:hex(g('--hi')),fneg:hex(g('--fneg')),fmid:hex(g('--fmid')),fpos:hex(g('--fpos')),edge:g('--edge'),
+    p:[g('--p0'),g('--p1'),g('--p2'),g('--p3')]};}
+const mix=(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];
+const div=v=>v<0?mix(C.fmid,C.fneg,Math.min(1,-v)):mix(C.fmid,C.fpos,Math.min(1,v));
+
+const off=document.createElement('canvas');const offc=off.getContext('2d');
+function prep(cv){const r=cv.getBoundingClientRect(),dpr=window.devicePixelRatio||1;const W=Math.max(1,Math.round(r.width*dpr)),H=Math.max(1,Math.round(r.height*dpr));
+  if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;}const ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,r.width,r.height);return {ctx,W:r.width,H:r.height};}
+function blit(ctx,W,H,M,fill){off.width=M;off.height=M;const im=offc.createImageData(M,M);
+  for(let k=0;k<M*M;k++){const c=fill(k);im.data[4*k]=c[0];im.data[4*k+1]=c[1];im.data[4*k+2]=c[2];im.data[4*k+3]=255;}
+  offc.putImageData(im,0,0);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(off,0,0,W,H);}
+// marching squares at level 0.5 on cell centers
+function contour(ctx,W,H,M,f){const s=W/M,lv=0.5;ctx.beginPath();
+  for(let y=0;y<M-1;y++)for(let x=0;x<M-1;x++){
+    const a=f[y*M+x],b=f[y*M+x+1],c=f[(y+1)*M+x+1],d=f[(y+1)*M+x];
+    const code=(a>lv?8:0)|(b>lv?4:0)|(c>lv?2:0)|(d>lv?1:0);if(code===0||code===15)continue;
+    const X=t=>(x+0.5+t)*s,Y=t=>(y+0.5+t)*s,it=(p,q)=>(lv-p)/(q-p);
+    const top=[X(it(a,b)),Y(0)],right=[X(1),Y(it(b,c))],bot=[X(it(d,c)),Y(1)],left=[X(0),Y(it(a,d))];
+    const seg=(p,q)=>{ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);};
+    switch(code){case 1:case 14:seg(left,bot);break;case 2:case 13:seg(bot,right);break;case 3:case 12:seg(left,right);break;
+      case 4:case 11:seg(top,right);break;case 5:seg(left,top);seg(bot,right);break;case 6:case 9:seg(top,bot);break;
+      case 7:case 8:seg(left,top);break;case 10:seg(left,bot);seg(top,right);break;}}
+  ctx.stroke();}
+function boxDesign(ctx,W,M){const s=W/M;ctx.strokeStyle=C.muted;ctx.setLineDash([4,4]);ctx.lineWidth=1;ctx.strokeRect(st.D0*s,st.D0*s,st.D*s,st.D*s);ctx.setLineDash([]);}
+
+function drawDesign(){if(!st)return;const {ctx,W,H}=prep($('cDesign'));const M=st.M;
+  if(view==='mat'){blit(ctx,W,H,M,k=>mix(C.lo,C.hi,Math.max(0,Math.min(1,st.eps[k]))));}
+  else{let gm=1e-12;for(const v of st.grad)gm=Math.max(gm,Math.abs(v));
+    blit(ctx,W,H,M,k=>{const y=Math.floor(k/M),x=k%M,i=x-st.D0,j=y-st.D0;
+      if(i<0||j<0||i>=st.D||j>=st.D)return mix(C.lo,C.hi,Math.max(0,Math.min(1,st.eps[k]))*0.35);return div(st.grad[j*st.D+i]/gm);});}
+  boxDesign(ctx,W,M);
+  $('legD').innerHTML=view==='mat'?'<span><i class="sw" style="background:var(--lo);border:1px solid var(--line)"></i>cladding n = 1.45</span><span><i class="sw" style="background:var(--hi)"></i>core n = 2.2</span><span>dashed = design region</span>'
+    :'<span><i class="ramp"></i>∂FOM/∂ρ: blue = remove, red = add material</span>';}
+function drawField(){if(!st)return;const {ctx,W,H}=prep($('cField'));const M=st.M;const f=st.fields[Math.min(lamSel,st.fields.length-1)];
+  let mx=1e-12;for(let k=0;k<M*M;k++){const x=k%M;if(x<4)continue;mx=Math.max(mx,Math.hypot(f[0][k],f[1][k]));}
+  const c=Math.cos(phase),s=Math.sin(phase);
+  blit(ctx,W,H,M,k=>div((f[0][k]*c+f[1][k]*s)/mx));
+  ctx.strokeStyle=C.edge;ctx.globalAlpha=0.7;ctx.lineWidth=1.3;contour(ctx,W,H,M,st.eps);ctx.globalAlpha=1;boxDesign(ctx,W,M);
+  ctx.fillStyle=C.fg;ctx.font=`11px ${C.mono}`;ctx.textBaseline='top';ctx.textAlign='left';ctx.fillText('in →',4,W*(st.M/2+3)/M);}
+function drawEff(){const {ctx,W,H}=prep($('cEff'));const Ml=44,Mr=12,Mt=10,Mb=30,pw=W-Ml-Mr,ph=H-Mt-Mb;const n=Math.max(60,hist.length);
+  const X=i=>Ml+i/n*pw,Y=v=>Mt+ph-v*ph;ctx.font=`11px ${C.mono}`;ctx.strokeStyle=C.grid;ctx.fillStyle=C.muted;ctx.lineWidth=1;
+  ctx.textAlign='right';ctx.textBaseline='middle';[0,0.25,0.5,0.75,1].forEach(v=>{ctx.beginPath();ctx.moveTo(Ml,Y(v));ctx.lineTo(Ml+pw,Y(v));ctx.stroke();ctx.fillText(Math.round(v*100)+'%',Ml-6,Y(v));});
+  const stp=n<=100?20:n<=250?50:100;ctx.textAlign='center';ctx.textBaseline='top';
+  for(let i=0;i<=n;i+=stp){ctx.beginPath();ctx.moveTo(X(i),Mt);ctx.lineTo(X(i),Mt+ph);ctx.stroke();ctx.fillText(i,X(i),Mt+ph+6);}
+  if(hist.length){const P=hist[0].length;for(let p=0;p<P;p++){ctx.strokeStyle=C.p[p];ctx.lineWidth=2;if((target==='demux'||target==='sort')&&p>=2||target==='conv'&&p===1)ctx.setLineDash([4,3]);ctx.beginPath();
+    hist.forEach((e,i)=>{const px=X(i),py=Y(Math.min(1,e[p]));i?ctx.lineTo(px,py):ctx.moveTo(px,py);});ctx.stroke();ctx.setLineDash([]);}}
+  ctx.strokeStyle=C.line;ctx.strokeRect(Ml,Mt,pw,ph);
+  $('legE').innerHTML=(NAMES[target]||[]).map((nm,i)=>`<span><i class="sw" style="background:${C.p[i]}"></i>${nm}</span>`).join('');}
+function stats(){if(!st)return;$('oIt').textContent=st.it;
+  const e=st.effs;$('oEffL').textContent={bend:'Transmission',split:'Upper / lower',demux:'1310↑ / 1550↓',conv:'TE₀ → TE₁',sort:'TE₀↑ / TE₁↓'}[target];
+  $('oEff').textContent=(target==='bend'||target==='conv')?(e[0]*100).toFixed(1)+' %':(e[0]*100).toFixed(1)+' / '+(e[1]*100).toFixed(1)+' %';
+  let b=0,n=0;for(let j=0;j<st.D;j++)for(let i=0;i<st.D;i++){const v=st.eps[(j+st.D0)*st.M+i+st.D0];n++;if(v<0.05||v>0.95)b++;}$('oBin').textContent=Math.round(100*b/n)+' %';
+  $('oMs').textContent=st.ms+' ms';$('bRun').textContent=running?'❚❚ Pause':'▶ Optimize';$('vFilt').textContent=filt===0?'off':((2*filt+1)*80)+' nm';
+  document.querySelectorAll('#targets .chip').forEach(b=>b.setAttribute('aria-pressed',b.dataset.t===target));
+  const two=!!SEGL[target];$('lamSeg').hidden=!two;$('lamTxt').hidden=two;if(two){$('lam0').textContent=SEGL[target][0];$('lam1').textContent=SEGL[target][1];}
+  $('lamTxt').textContent=target==='conv'?'TE₀ in · λ = 1550 nm':'λ = 1550 nm';
+  $('lam0').setAttribute('aria-pressed',lamSel===0);$('lam1').setAttribute('aria-pressed',lamSel===1);
+  $('busy').textContent=running?'optimizing…':'';}
+
+w.onmessage=e=>{const m=e.data;if(m.type!=='state')return;
+  if(m.it===0)hist=[];if(m.it>hist.length-1||m.it===0){hist[m.it]=m.effs.slice();}
+  st=m;running=m.running;target=m.target;drawDesign();drawEff();stats();};
+document.querySelectorAll('#targets .chip').forEach(b=>b.onclick=()=>{target=b.dataset.t;lamSel=target==='demux'?0:0;hist=[];w.postMessage({cmd:'target',name:target});if(running)w.postMessage({cmd:'run'});});
+$('bRun').onclick=()=>{running=!running;w.postMessage({cmd:running?'run':'pause'});stats();};
+$('bStep').onclick=()=>{running=false;w.postMessage({cmd:'step'});};
+$('bReset').onclick=()=>{running=false;hist=[];w.postMessage({cmd:'pause'});w.postMessage({cmd:'reset'});};
+$('sFilt').oninput=e=>{filt=+e.target.value;w.postMessage({cmd:'filt',v:filt});};
+$('tBin').onchange=e=>w.postMessage({cmd:'bin',v:e.target.checked});
+$('vMat').onclick=()=>{view='mat';$('vMat').setAttribute('aria-pressed',true);$('vGrad').setAttribute('aria-pressed',false);drawDesign();};
+$('vGrad').onclick=()=>{view='grad';$('vGrad').setAttribute('aria-pressed',true);$('vMat').setAttribute('aria-pressed',false);drawDesign();};
+$('lam0').onclick=()=>{lamSel=0;stats();};$('lam1').onclick=()=>{lamSel=1;stats();};
+
+let reduce=false;try{reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(e){}
+let last=0;function loop(t){const dt=last?Math.min(0.05,(t-last)/1000):0;last=t;if(!reduce)phase+=dt*2*Math.PI*0.5;drawField();requestAnimationFrame(loop);}
+const refresh=()=>{readCss();drawDesign();drawEff();};
+try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',refresh);}catch(e){}
+new MutationObserver(refresh).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+new ResizeObserver(()=>{if(C&&st){drawDesign();drawEff();}}).observe(document.querySelector('.wrap'));
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{if(C)refresh();});
+readCss();drawEff();
+w.postMessage({cmd:'target',name:'bend'});w.postMessage({cmd:'run'});running=true;stats();
+requestAnimationFrame(loop);
+})();
+</script>

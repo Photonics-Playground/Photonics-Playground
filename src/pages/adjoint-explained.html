@@ -1,0 +1,661 @@
+<title>How Inverse Design Works</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: seven steps, each pairing an explanation (left) with a live figure (right); a 2x2 panel grid for the full loop */
+:root{
+  --bg:#F3F5F8; --panel:#FFFFFF; --fg:#16212E; --muted:#5B6878; --line:#D9DFE7; --grid:#E6EAF0;
+  --accent:#2350C8; --fneg:#2350C8; --fmid:#F7F8FA; --fpos:#D2492A; --hot:#C08A12; --edge:#16212E;
+  --lo:#EDF1F6; --hi:#1E3A78; --core:#DCE5F4; --clad:#F4F6F9; --ray:#D2492A; --good:#14936B; --bad:#B4441F;
+  --p0:#2350C8; --p1:#D2492A; --p2:#14936B; --p3:#C08A12;
+  --f-display:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-body:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E141C; --panel:#151D28; --fg:#E4E9F0; --muted:#93A0B1; --line:#283444; --grid:#1F2A37;
+  --accent:#7DA2FF; --fneg:#5B8BFF; --fmid:#111821; --fpos:#FF7A55; --hot:#F2C14E; --edge:#E4E9F0;
+  --lo:#18212D; --hi:#9DB8F5; --core:#22324A; --clad:#141C27; --ray:#FF8A6B; --good:#4FD1A5; --bad:#FF8A6B;
+  --p0:#7DA2FF; --p1:#FF8A6B; --p2:#4FD1A5; --p3:#F2C14E; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E141C; --panel:#151D28; --fg:#E4E9F0; --muted:#93A0B1; --line:#283444; --grid:#1F2A37;
+  --accent:#7DA2FF; --fneg:#5B8BFF; --fmid:#111821; --fpos:#FF7A55; --hot:#F2C14E; --edge:#E4E9F0;
+  --lo:#18212D; --hi:#9DB8F5; --core:#22324A; --clad:#141C27; --ray:#FF8A6B; --good:#4FD1A5; --bad:#FF8A6B;
+  --p0:#7DA2FF; --p1:#FF8A6B; --p2:#4FD1A5; --p3:#F2C14E; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15.5px;line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px}
+.wrap{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+header h1{font-family:var(--f-display);font-weight:700;font-size:clamp(1.7rem,4vw,2.5rem);letter-spacing:-.015em;margin:0;text-wrap:balance}
+header p{margin:6px 0 0;color:var(--muted);max-width:70ch;font-size:1.02rem}
+button,select,input{font:inherit}button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.step{display:grid;grid-template-columns:minmax(0,0.85fr) minmax(0,1.15fr);gap:28px;padding:28px 0;border-top:1px solid var(--line);align-items:start;scroll-margin-top:12px}
+@media (max-width:880px){.step{grid-template-columns:1fr;gap:16px}}
+.step .txt{display:flex;flex-direction:column;gap:12px;min-width:0}
+.step .num{font-family:var(--f-mono);font-size:.78rem;color:var(--accent);letter-spacing:.04em}
+.step h2{margin:0;font-size:clamp(1.3rem,2.6vw,1.7rem);letter-spacing:-.01em;line-height:1.2;text-wrap:balance}
+.step p{margin:0;max-width:62ch}
+.step .fig{min-width:0;display:flex;flex-direction:column;gap:10px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0}
+canvas{display:block;width:100%}
+.ctrls{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 18px;align-items:end}
+.ctl{display:flex;flex-direction:column;gap:2px}
+.ctl .row{display:flex;justify-content:space-between;gap:8px;font-size:.88rem}
+.ctl .row b{font-family:var(--f-mono);font-weight:500;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.sel{display:flex;flex-direction:column;gap:3px;font-size:.88rem}
+.sel select{font-family:var(--f-mono);font-size:.84rem;padding:5px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;flex-wrap:wrap}
+.seg button{border:0;background:transparent;color:var(--fg);padding:5px 12px;font-weight:600;font-size:.84rem}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--panel)}
+.reads{display:flex;flex-wrap:wrap;gap:8px 22px}
+.reads div{display:flex;flex-direction:column}
+.reads span{font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600}
+.reads b{font-family:var(--f-mono);font-weight:500;font-size:1.05rem;font-variant-numeric:tabular-nums}
+.badge{display:inline-block;font-family:var(--f-mono);font-size:.78rem;font-weight:600;padding:2px 9px;border-radius:999px;border:1px solid currentColor}
+.badge.good{color:var(--good)}.badge.bad{color:var(--bad)}
+.eq{font-family:var(--f-mono);font-size:.86rem;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;overflow-x:auto;white-space:nowrap;max-width:100%}
+.note{font-size:.88rem;color:var(--muted)}
+.term{border-bottom:1px dotted var(--accent);cursor:help;position:relative;white-space:nowrap}
+.term:hover::after,.term:focus::after{content:attr(data-def);position:absolute;left:0;top:calc(100% + 6px);z-index:20;width:max-content;max-width:min(280px,70vw);white-space:normal;
+  background:var(--fg);color:var(--bg);font-size:.82rem;line-height:1.45;padding:8px 10px;border-radius:8px;font-weight:400;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+.quiz{border:1px dashed var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;background:var(--panel)}
+.quiz .qhead{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);font-weight:600}
+.quiz .qq{margin:0;font-weight:600}
+.quiz .qopts{display:flex;flex-direction:column;gap:6px}
+.quiz .qopts button{text-align:left;padding:7px 11px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--fg);font-size:.9rem}
+.quiz .qopts button:hover{border-color:var(--accent)}
+.quiz .qopts button.right{border-color:var(--good);color:var(--good);font-weight:600}
+.quiz .qopts button.wrong{border-color:var(--bad);color:var(--bad)}
+.quiz .qfb{margin:0;font-size:.9rem;color:var(--muted)}
+.quiz .qfb b{color:var(--fg)}
+.status{font-family:var(--f-mono);font-size:.8rem;color:var(--muted);min-height:1.2em}
+.status.busy{color:var(--accent)}
+.btn{padding:7px 14px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--fg);font-weight:600;font-size:.86rem}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.recap{border-top:1px solid var(--line);padding-top:26px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.recap h2{grid-column:1/-1;margin:0;font-size:1.4rem}
+.recap div{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.recap div b{display:block;margin-bottom:4px}
+.recap div p{margin:0;color:var(--muted);font-size:.92rem}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:.8rem;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:16px;height:3px;display:inline-block;border-radius:2px}
+.ramp{width:50px;height:10px;border-radius:2px;display:inline-block;border:1px solid var(--line);background:linear-gradient(90deg,var(--fneg),var(--fmid),var(--fpos))}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+[hidden]{display:none!important}
+.tri{display:grid;grid-template-columns:minmax(0,1fr) 24px minmax(0,1fr);gap:8px;align-items:center}
+.tri figcaption,.quad figcaption{font-size:.74rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;margin-top:4px;text-align:center}
+.tri figure,.quad figure{margin:0;min-width:0}
+.quad{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.op{display:flex;align-items:center;justify-content:center;font-family:var(--f-mono);color:var(--muted)}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+table.chk{border-collapse:collapse;width:100%;font-size:.84rem;font-variant-numeric:tabular-nums}
+table.chk th{text-align:left;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+table.chk td{padding:6px 8px;border-bottom:1px solid var(--grid);font-family:var(--f-mono)}
+.tablewrap{overflow-x:auto}
+.deriv{display:flex;flex-direction:column;gap:12px}
+.deriv .ln{display:grid;grid-template-columns:28px minmax(0,1fr);gap:4px 10px;align-items:start}
+.deriv .ln>span{font-family:var(--f-mono);font-size:.8rem;color:var(--accent);padding-top:9px}
+.deriv .ln p{margin:4px 0 0;font-size:.9rem;color:var(--muted);max-width:none}
+.cost{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;font-size:.9rem}
+.cost b{font-family:var(--f-mono);font-weight:500;text-align:right;font-variant-numeric:tabular-nums}
+.cost .hl{color:var(--good)}
+.cost .bad{color:var(--bad)}
+.counter{font-family:var(--f-mono);font-size:.86rem}
+#cLoopJ{height:150px}
+.scale{display:flex;align-items:center;gap:8px;font-size:.78rem;color:var(--muted)}
+details.math summary{cursor:pointer;color:var(--accent);font-weight:600}
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="kicker">PHOTONICS PLAYGROUND</span>
+    <h1>How Inverse Design Works</h1>
+    <p>So far we have designed components by intuition, using what we know about how light is guided in waveguides. But what if we let the computer design them, based only on simulation results? That is inverse design. We state what the device should do, and an optimizer finds the shape. It can change thousands of pixels at once thanks to one trick, the adjoint method, which finds how every pixel affects the result from just two simulations. Seven steps show what it computes, how, and why it is allowed.</p>
+  </header>
+
+  <section class="step" id="s1">
+    <div class="txt">
+      <span class="num">STEP 1 OF 7</span>
+      <h2>Turn "a good device" into a number</h2>
+      <p>The task is to bend light by 90° into the lower waveguide. Between the two waveguides sits a <span class="term" tabindex="0" data-def="The square the optimizer may change. Everything outside it stays fixed.">design region</span> of 31 × 31 = 961 pixels. Each pixel can be cladding (glass) or core material.</p>
+      <p>To optimize, we need a single number that says how good a design is, the <span class="term" tabindex="0" data-def="The quantity the optimizer maximizes, also called the objective function.">figure of merit</span> (FOM). Here it is the fraction of the input power that arrives in the output waveguide's mode, measured at the detector (green line).</p>
+      <p>We start with an empty design region. Almost no light makes the turn.</p>
+      <div class="eq">FOM = |overlap of the field with the output mode|²  ∈ [0, 1]</div>
+    </div>
+    <div class="fig">
+      <div class="panel"><canvas id="c1" aria-label="The device with source, empty design region and detector"></canvas></div>
+      <div class="reads" id="r1"></div>
+    </div>
+  </section>
+
+  <section class="step" id="s2">
+    <div class="txt">
+      <span class="num">STEP 2 OF 7</span>
+      <h2>The forward simulation</h2>
+      <p>Light enters from the left. The simulation solves Maxwell's equations on a grid of cells. Every cell gives one equation linking its field to its neighbours, so the whole problem becomes one large linear system.</p>
+      <div class="eq">A(ε) · E<sub>fwd</sub> = b</div>
+      <p>A holds the material (the permittivity ε = n² of every cell) and the grid. E<sub>fwd</sub> is the forward field we want, and b is the source on the red line. One solve gives the field everywhere, and from it the FOM.</p>
+      <p>Note the waves spreading out of the input waveguide. Without a structure to guide it, most light misses the detector.</p>
+    </div>
+    <div class="fig">
+      <div class="panel"><canvas id="c2" aria-label="Animated forward field"></canvas></div>
+      <div class="reads" id="r2"></div>
+    </div>
+  </section>
+
+  <section class="step" id="s3">
+    <div class="txt">
+      <span class="num">STEP 3 OF 7</span>
+      <h2>The brute-force way: test every pixel</h2>
+      <p>To improve the design we want the <span class="term" tabindex="0" data-def="For every pixel, how much the FOM changes when that pixel changes a little. A map with one number per pixel.">gradient</span>. For every pixel, does adding material raise or lower the FOM, and by how much?</p>
+      <p>The obvious way is to change one pixel, simulate again, and compare. Tap pixels inside the dashed square to try it. Red pixels raised the FOM, blue ones lowered it.</p>
+      <p>That works, but every pixel costs a full simulation, and the optimizer needs the whole map again after every step.</p>
+      <div class="counter" id="cnt3"></div>
+      <div class="btnrow"><button class="btn" id="b3rand">Test 20 random pixels</button><button class="btn" id="b3clr">Clear</button></div>
+    </div>
+    <div class="fig">
+      <div class="panel"><canvas id="c3" style="touch-action:manipulation;cursor:crosshair" aria-label="Tap pixels in the design region to test them one by one"></canvas></div>
+      <div class="scale"><span>lowers the FOM</span><span class="ramp"></span><span>raises the FOM</span></div>
+    </div>
+  </section>
+
+  <section class="step" id="s4">
+    <div class="txt">
+      <span class="num">STEP 4 OF 7</span>
+      <h2>The adjoint simulation: send light back from the detector</h2>
+      <p>The adjoint method needs only one more simulation. This time the source sits at the detector and sends light backwards into the device.</p>
+      <p>What it emits is the output mode, with an amplitude and phase set by how the FOM depends on the field there. In equations, its source is ∂FOM/∂E<sub>fwd</sub>. For a mode-overlap FOM, that is the output mode, phase-matched to the light that actually arrived.</p>
+      <div class="eq">Aᵀ · E<sub>adj</sub> = (∂FOM/∂E<sub>fwd</sub>)ᵀ</div>
+      <p>Compare the two fields. The forward field E<sub>fwd</sub> shows where the light goes. The adjoint field E<sub>adj</sub> shows where light would have to come from to reach the detector.</p>
+      <div class="seg" id="v4"><button data-v="adj" aria-pressed="true">Adjoint field</button><button data-v="fwd">Forward field</button></div>
+    </div>
+    <div class="fig">
+      <div class="panel"><canvas id="c4" aria-label="Animated adjoint field, emitted from the detector"></canvas></div>
+    </div>
+  </section>
+
+  <section class="step" id="s5">
+    <div class="txt">
+      <span class="num">STEP 5 OF 7</span>
+      <h2>The gradient is where the two fields overlap</h2>
+      <p>Multiply the forward and adjoint fields cell by cell and you get the gradient for every cell at once.</p>
+      <div class="eq">∂FOM/∂εᵢ = −k₀²Δx² · Re( E<sub>adj,i</sub> · E<sub>fwd,i</sub> )</div>
+      <p>Why does this work? Picture a tiny speck of extra material in one pixel. The forward light hits it, and the speck scatters a little light in all directions, like a small antenna. The question is whether this scattered light helps at the detector.</p>
+      <p>The adjoint field answers exactly that. Because light paths are reversible, E<sub>adj</sub> at a pixel tells how light starting there would arrive at the detector, and with which phase. If the scattered light arrives in step with the light already there, the two add up and the FOM rises (red). If it arrives out of step, they cancel and the FOM falls (blue). The product of the two fields measures precisely this interference.</p>
+      <p>Your tapped pixels from step 3 are marked with rings: red taps sit on red parts of the map, blue taps on blue. Press the button to compare numbers: the adjoint gradient agrees with brute force to many digits.</p>
+      <div class="btnrow"><button class="btn primary" id="b5chk">Check 5 pixels against brute force</button><span class="status" id="st5"></span></div>
+      <div class="tablewrap" id="tbl5"></div>
+    </div>
+    <div class="fig">
+      <div class="tri">
+        <figure><div class="panel" style="padding:6px"><canvas id="c5a" aria-label="Forward field snapshot"></canvas></div><figcaption>Forward E<sub style="text-transform:none">fwd</sub></figcaption></figure>
+        <div class="op">×</div>
+        <figure><div class="panel" style="padding:6px"><canvas id="c5b" aria-label="Adjoint field snapshot"></canvas></div><figcaption>Adjoint E<sub style="text-transform:none">adj</sub></figcaption></figure>
+      </div>
+      <p class="note" style="margin:0">↓ the full complex product, −Re(E<sub>adj</sub> · E<sub>fwd</sub>), does not depend on time. That is the gradient map.</p>
+      <div class="panel"><canvas id="c5" aria-label="Gradient map: where adding material raises or lowers the FOM"></canvas></div>
+      <div class="scale"><span>adding material lowers the FOM</span><span class="ramp"></span><span>raises the FOM</span></div>
+    </div>
+  </section>
+
+  <section class="step" id="s6">
+    <div class="txt">
+      <span class="num">STEP 6 OF 7</span>
+      <h2>Why are we allowed to do this?</h2>
+      <p>Three facts about the physics make the trick exact, not an approximation.</p>
+      <p><b>The equations are linear in the field.</b> The field depends on the material in a complicated way, but for a fixed material, A · E<sub>fwd</sub> = b is an ordinary linear system. That lets us differentiate it.</p>
+      <p><b>Each pixel changes only its own entry of A.</b> Changing εᵢ touches one diagonal element, so its effect on the system is local and simple.</p>
+      <p><b>Light paths are reversible.</b> For ordinary (<span class="term" tabindex="0" data-def="Materials where light from A to B behaves like light from B to A. True for glass, silicon and most passive optics; broken by magnetic materials.">reciprocal</span>) materials A is symmetric, Aᵀ = A. The adjoint problem is the same physics with a different source, so the same solver solves it.</p>
+      <p>The cost no longer grows with the number of pixels. Whether 961 pixels or a million, the gradient always takes one forward and one adjoint simulation.</p>
+      <div class="cost" id="cost6"></div>
+    </div>
+    <div class="fig">
+      <div class="panel deriv">
+        <div class="ln"><span>1</span><div><div class="eq">dFOM/dεᵢ = ∂FOM/∂E<sub>fwd</sub> · dE<sub>fwd</sub>/dεᵢ</div><p>The FOM depends on the material only through the field (chain rule; for complex fields, take the real part).</p></div></div>
+        <div class="ln"><span>2</span><div><div class="eq">A·(dE<sub>fwd</sub>/dεᵢ) + (∂A/∂εᵢ)·E<sub>fwd</sub> = 0</div><p>Differentiate A·E<sub>fwd</sub> = b. The source b does not depend on the design.</p></div></div>
+        <div class="ln"><span>3</span><div><div class="eq">dE<sub>fwd</sub>/dεᵢ = −A⁻¹ (∂A/∂εᵢ) E<sub>fwd</sub></div><p>Brute force would solve this once per pixel, 961 times.</p></div></div>
+        <div class="ln"><span>4</span><div><div class="eq">dFOM/dεᵢ = −[∂FOM/∂E<sub>fwd</sub> · A⁻¹] (∂A/∂εᵢ) E<sub>fwd</sub> = −E<sub>adj</sub>ᵀ (∂A/∂εᵢ) E<sub>fwd</sub></div><p>Group the part that does not depend on i and call it E<sub>adj</sub>. It is computed once, from Aᵀ E<sub>adj</sub> = (∂FOM/∂E<sub>fwd</sub>)ᵀ. That is the adjoint simulation.</p></div></div>
+        <div class="ln"><span>5</span><div><div class="eq">∂A/∂εᵢ = k₀²Δx² eᵢeᵢᵀ  ⇒  dFOM/dεᵢ = −k₀²Δx² E<sub>adj,i</sub> E<sub>fwd,i</sub></div><p>Only cell i is touched, so the gradient is a product of the two fields in that cell (real part taken).</p></div></div>
+        <details class="math"><summary>Same result, the Lagrange-multiplier way</summary><p class="note">Write L = FOM − E<sub>adj</sub>ᵀ(A·E<sub>fwd</sub> − b). Since A·E<sub>fwd</sub> = b holds, L = FOM for every design, so dL/dε = dFOM/dε. Choose E<sub>adj</sub> so that all terms with dE<sub>fwd</sub>/dε cancel. That condition is Aᵀ E<sub>adj</sub> = (∂FOM/∂E<sub>fwd</sub>)ᵀ. What remains is −E<sub>adj</sub>ᵀ(∂A/∂ε)E<sub>fwd</sub>. The adjoint field is the Lagrange multiplier that enforces Maxwell's equations.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <section class="step" id="s7">
+    <div class="txt">
+      <span class="num">STEP 7 OF 7</span>
+      <h2>From gradient to design</h2>
+      <p>Now repeat: forward simulation, adjoint simulation, gradient, and a small step for every pixel at once in the direction that raises the FOM. The design starts as uniform gray, a mixture halfway between core and cladding.</p>
+      <p>Two extra ingredients turn the result into something that can be fabricated. A <span class="term" tabindex="0" data-def="Each pixel is replaced by a weighted average of its neighbours, which removes features smaller than a few pixels.">filter</span> blurs away tiny features, and a <span class="term" tabindex="0" data-def="A smooth step function that pushes each pixel toward pure core or pure cladding. It gets sharper as the optimization proceeds.">projection</span> slowly forces every pixel to pure core or pure cladding. The gradient flows through both by the chain rule.</p>
+      <p>Watch panels 1 and 2 as the FOM approaches 100 %. They become almost identical. In a perfect device, light sent back from the detector retraces exactly the path the forward light takes. That is reciprocity at work.</p>
+      <p>The gradient only knows the local slope. The optimizer climbs the nearest hill, so different starting points can end at different designs.</p>
+      <div class="btnrow"><button class="btn primary" id="b7run">Run</button><button class="btn" id="b7step">One step</button><button class="btn" id="b7reset">Reset</button><span class="status" id="st7"></span></div>
+    </div>
+    <div class="fig">
+      <div class="quad">
+        <figure><div class="panel" style="padding:6px"><canvas id="c7a" aria-label="Forward field"></canvas></div><figcaption>1 · Forward field</figcaption></figure>
+        <figure><div class="panel" style="padding:6px"><canvas id="c7b" aria-label="Adjoint field"></canvas></div><figcaption>2 · Adjoint field</figcaption></figure>
+        <figure><div class="panel" style="padding:6px"><canvas id="c7c" aria-label="Gradient in the design region"></canvas></div><figcaption>3 · Gradient</figcaption></figure>
+        <figure><div class="panel" style="padding:6px"><canvas id="c7d" aria-label="Current design"></canvas></div><figcaption>4 · Design after the step</figcaption></figure>
+      </div>
+      <div class="panel"><canvas id="cLoopJ" aria-label="FOM versus iteration"></canvas></div>
+    </div>
+  </section>
+
+  <section class="recap">
+    <h2>In short</h2>
+    <div><b>One number</b><p>Inverse design needs a figure of merit (FOM) that says what "good" means.</p></div>
+    <div><b>Two simulations</b><p>A forward simulation from the source and an adjoint simulation from the detector give the gradient for every pixel.</p></div>
+    <div><b>Exact, not approximate</b><p>Linearity, locality and reciprocity make the adjoint gradient equal to brute force, at a fraction of the cost.</p></div>
+    <div><b>Then climb</b><p>Small steps along the gradient, with filtering and projection, turn gray into a fabricable design.</p></div>
+  </section>
+  <p class="note"><b>Model and accuracy.</b> 2D scalar model (E out of plane) at 1550 nm on an 80 nm grid: core n = 2.2, cladding n = 1.45, 400 nm wide waveguides and a 31 × 31-pixel design region. Steps 1 to 6 use the raw pixels, without filter or projection. Step 7 adds a cone filter, a tanh projection and the Adam optimizer. All timings are measured on your device.</p>
+</div>
+
+<script type="text/plain" id="wsrc">
+// Design Studio worker: general 2D scalar FDFD (Ez) with adjoint gradients for arbitrary weighted FOMs
+let A=12; // absorber cells on each side: at least 0.9 µm thick, set per scene in compile()
+let S=null; // compiled scene
+let regions=new Map(); // persistent design params by region id
+let it=0,beta=1,bin=true,running=false,view=0,lastMs=0,batchId=null;
+let Mre=null,Mim=null,tag=0;
+let last=null; // last evaluation result
+
+// ---------- grid ----------
+function compile(sc){
+  A=Math.max(12,Math.round(0.9/sc.dx));
+  const dx=sc.dx, NXi=Math.max(8,Math.round(sc.W/dx)), NYi=Math.max(8,Math.round(sc.H/dx));
+  const NX=NXi+2*A, NY=NYi+2*A, N=NX*NY;
+  const colMajor=NY<=NX, BW=colMajor?NY:NX, LDA=2*BW+1;
+  const idx=colMajor?((x,y)=>x*NY+y):((x,y)=>y*NX+x);
+  const epsBg=sc.bg*sc.bg;
+  const cellsIn=(lo,hi,n)=>{const a=Math.max(0,Math.ceil(lo/dx-0.5-1e-9)),b=Math.min(n-1,Math.ceil(hi/dx-0.5-1e-9)-1);return [a,b];};
+  const base=new Float64Array(NXi*NYi).fill(epsBg);
+  const objs=sc.objs;
+  // subpixel smoothing: boundary cells get the area-weighted permittivity. The field (Ez) is parallel to every
+  // in-plane interface here, so plain averaging of ε is the correct effective medium and removes staircase scattering.
+  const blend=(i,f,n2)=>{if(f<=0)return;base[i]=f>=1?n2:base[i]*(1-f)+n2*f;};
+  const ov=(a0,a1,c)=>Math.max(0,Math.min(a1,(c+1)*dx)-Math.max(a0,c*dx))/dx;
+  objs.filter(o=>o.kind==='rect').forEach(o=>{const X0=Math.min(o.x0,o.x1),X1=Math.max(o.x0,o.x1),Y0=Math.min(o.y0,o.y1),Y1=Math.max(o.y0,o.y1),n2=o.n*o.n;
+    const xa=Math.max(0,Math.floor(X0/dx)),xb=Math.min(NXi-1,Math.ceil(X1/dx)-1),ya=Math.max(0,Math.floor(Y0/dx)),yb=Math.min(NYi-1,Math.ceil(Y1/dx)-1);
+    for(let y=ya;y<=yb;y++){const fy=ov(Y0,Y1,y);for(let x=xa;x<=xb;x++)blend(y*NXi+x,ov(X0,X1,x)*fy,n2);}});
+  // curved waveguides: a centre-line polyline with a width (bends, S-bends, rings)
+  objs.filter(o=>o.kind==='path').forEach(o=>{const P=o.pts,hw=o.w/2,n2=o.n*o.n;const segs=[];for(let i=0;i<P.length-1;i++)segs.push([P[i],P[i+1]]);
+    let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;P.forEach(([x,y])=>{x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y);});
+    const[xa,xb]=cellsIn(x0-hw,x1+hw,NXi),[ya,yb]=cellsIn(y0-hw,y1+hw,NYi);
+    const dist=(px,py)=>{let dmin=1e9;for(const[[ax,ay],[bx,by]] of segs){const vx=bx-ax,vy=by-ay,L2=vx*vx+vy*vy;let t=L2>0?((px-ax)*vx+(py-ay)*vy)/L2:0;t=t<0?0:t>1?1:t;const ex=ax+t*vx-px,ey=ay+t*vy-py;const d=ex*ex+ey*ey;if(d<dmin)dmin=d;}return Math.sqrt(dmin);};
+    const SS=6;
+    for(let y=ya;y<=yb;y++)for(let x=xa;x<=xb;x++){const d=dist((x+0.5)*dx,(y+0.5)*dx);
+      if(d<=hw-0.75*dx){base[y*NXi+x]=n2;continue;} if(d>=hw+0.75*dx)continue;
+      let inside=0;for(let sy=0;sy<SS;sy++)for(let sx=0;sx<SS;sx++)if(dist((x+(sx+0.5)/SS)*dx,(y+(sy+0.5)/SS)*dx)<=hw)inside++;
+      blend(y*NXi+x,inside/(SS*SS),n2);}});
+  const regs=[];
+  objs.filter(o=>o.kind==='design').forEach(o=>{const[xa,xb]=cellsIn(Math.min(o.x0,o.x1),Math.max(o.x0,o.x1),NXi),[ya,yb]=cellsIn(Math.min(o.y0,o.y1),Math.max(o.y0,o.y1),NYi);
+    const nx=xb-xa+1,ny=yb-ya+1;if(nx<1||ny<1)return;
+    let p=regions.get(o.id);
+    if(!p||p.nx!==nx||p.ny!==ny){p={nx,ny,x:new Float64Array(nx*ny).fill(0.5),mA:new Float64Array(nx*ny),vA:new Float64Array(nx*ny)};regions.set(o.id,p);}
+    regs.push({id:o.id,i0:xa,j0:ya,nx,ny,p,epsHi:o.n*o.n,filt:o.filt|0,sym:o.sym||'none',rf:new Float64Array(nx*ny),rp:new Float64Array(nx*ny)});});
+  const clampC=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+  const line=o=>{const v=o.axis==='v';const n=v?NXi:NYi,m=v?NYi:NXi;
+    const pos=clampC(Math.floor(o.pos/dx),2,n-3);const[a,b]=cellsIn(Math.min(o.a0,o.a1),Math.max(o.a0,o.a1),m);
+    const cells=[];for(let t=a;t<=b;t++)cells.push(t);return {axis:o.axis,pos,cells,dir:o.dir<0?-1:1};};
+  const errors=[];
+  const sources=objs.filter(o=>o.kind==='source').map(o=>Object.assign(line(o),{id:o.id,st:o.st||'mode',lam:o.lam,mode:o.mode|0}));
+  const dets=objs.filter(o=>o.kind==='mode'||o.kind==='flux'||o.kind==='probe'||o.kind==='gauss').map(o=>{
+    if(o.kind==='probe')return {id:o.id,kind:'probe',x:clampC(Math.floor(o.x/dx),0,NXi-1),y:clampC(Math.floor(o.y/dx),0,NYi-1)};
+    return Object.assign(line(o),{id:o.id,kind:o.kind,mode:o.mode|0,z0:o.z0,w0:o.w0,theta:o.theta||0});});
+  sources.concat(dets).forEach(l=>{if(l.cells&&l.cells.length<2)errors.push(l.id+' is too short.');
+    if(l.cells&&l.kind!=='flux')regs.forEach(r=>{const v=l.axis==='v';const p=l.pos,lo=l.cells[0],hi=l.cells[l.cells.length-1];
+      const inP=v?(p>=r.i0-1&&p<=r.i0+r.nx):(p>=r.j0-1&&p<=r.j0+r.ny),inA=v?(hi>=r.j0&&lo<r.j0+r.ny):(hi>=r.i0&&lo<r.i0+r.nx);
+      if(inP&&inA)errors.push(l.id+' touches design region '+r.id+'. Move it outside, onto a fixed waveguide.');});});
+  const terms=(sc.terms||[]).map(t=>({si:sources.findIndex(s=>s.id===t.src),di:dets.findIndex(d=>d.id===t.det),w:(+t.w||0)*(t.sign<0?-1:1)})).filter(t=>t.si>=0&&t.di>=0&&t.w!==0);
+  // absorber
+  const epsI=new Float64Array(N);
+  for(let y=0;y<NY;y++)for(let x=0;x<NX;x++){const d=Math.max(A-x,x-(NX-1-A),A-y,y-(NY-1-A),0)/A;epsI[idx(x,y)]=6*d*d;}
+  if(!Mre||Mre.length!==N*LDA){Mre=new Float64Array(N*LDA);Mim=new Float64Array(N*LDA);}
+  // forget params of deleted regions
+  // design parameters persist by region id, so comparison scenes without a design region leave an optimized design intact
+  return {dx,NXi,NYi,NX,NY,N,BW,LDA,idx,epsBg,base,regs,sources,dets,terms,epsI,errors,opt:sc.opt||{}};
+}
+
+// ---------- design parametrization ----------
+function kern(r){if(r<=0)return [[0,0,1]];const k=[];for(let a=-r;a<=r;a++)for(let b=-r;b<=r;b++){const w=Math.max(0,r+1-Math.hypot(a,b));if(w>0)k.push([a,b,w]);}return k;}
+function project(r){const {nx,ny,p,rf,rp}=r,K=kern(r.filt);
+  for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){let v=0,ws=0;for(const[a,b,w] of K){const ii=i+a,jj=j+b;if(ii<0||jj<0||ii>=nx||jj>=ny)continue;v+=w*p.x[jj*nx+ii];ws+=w;}rf[j*nx+i]=v/ws;}
+  if(beta>0){const den=2*Math.tanh(beta*0.5);for(let k=0;k<nx*ny;k++)rp[k]=(Math.tanh(beta*0.5)+Math.tanh(beta*(rf[k]-0.5)))/den;}else rp.set(rf);}
+function buildEps(){const {NXi,NYi,NX,NY,idx,base,regs,epsBg}=S;const ei=Float64Array.from(base);
+  regs.forEach(r=>{project(r);for(let j=0;j<r.ny;j++)for(let i=0;i<r.nx;i++)ei[(r.j0+j)*NXi+r.i0+i]=epsBg+r.rp[j*r.nx+i]*(r.epsHi-epsBg);});
+  const e=new Float64Array(S.N);
+  for(let x=0;x<NX;x++)for(let y=0;y<NY;y++){const ix=Math.min(NXi-1,Math.max(0,x-A)),iy=Math.min(NYi-1,Math.max(0,y-A));e[idx(x,y)]=ei[iy*NXi+ix];}
+  return {ei,e};}
+
+// ---------- banded LU ----------
+function factor(e,q){const {NX,NY,N,BW,LDA,idx,epsI}=S;Mre.fill(0);Mim.fill(0);
+  for(let x=0;x<NX;x++)for(let y=0;y<NY;y++){const i=idx(x,y),b=i*LDA+BW;Mre[b]=-4+q*e[i];Mim[b]=q*epsI[i];
+    if(x>0)Mre[b+idx(x-1,y)-i]=1;if(x<NX-1)Mre[b+idx(x+1,y)-i]=1;if(y>0)Mre[b+idx(x,y-1)-i]=1;if(y<NY-1)Mre[b+idx(x,y+1)-i]=1;}
+  for(let k=0;k<N;k++){const bk=k*LDA+BW,pr=Mre[bk],pi=Mim[bk],pd=pr*pr+pi*pi,ir=pr/pd,ii=-pi/pd;
+    const iend=Math.min(N-1,k+BW),rowK=k*LDA+BW-k;
+    for(let i=k+1;i<=iend;i++){const rowI=i*LDA+BW-i,bi=rowI+k;const ar=Mre[bi],ai=Mim[bi];if(ar===0&&ai===0)continue;
+      const lr=ar*ir-ai*ii,li=ar*ii+ai*ir;Mre[bi]=lr;Mim[bi]=li;
+      for(let j=k+1;j<=iend;j++){const ur=Mre[rowK+j],ui=Mim[rowK+j];if(ur===0&&ui===0)continue;Mre[rowI+j]-=lr*ur-li*ui;Mim[rowI+j]-=lr*ui+li*ur;}}}}
+function solve(br,bi){const {N,BW,LDA}=S;
+  for(let i=0;i<N;i++){const j0=Math.max(0,i-BW),row=i*LDA+BW-i;let sr=br[i],si=bi[i];for(let j=j0;j<i;j++){const lr=Mre[row+j],li=Mim[row+j];if(lr===0&&li===0)continue;sr-=lr*br[j]-li*bi[j];si-=lr*bi[j]+li*br[j];}br[i]=sr;bi[i]=si;}
+  for(let i=N-1;i>=0;i--){const j1=Math.min(N-1,i+BW),row=i*LDA+BW-i;let sr=br[i],si=bi[i];for(let j=i+1;j<=j1;j++){const ur=Mre[row+j],ui=Mim[row+j];if(ur===0&&ui===0)continue;sr-=ur*br[j]-ui*bi[j];si-=ur*bi[j]+ui*br[j];}
+    const dr=Mre[row+i],di=Mim[row+i],dd=dr*dr+di*di;br[i]=(sr*dr+si*di)/dd;bi[i]=(si*dr-sr*di)/dd;}}
+
+// ---------- line modes (discrete transverse eigenproblem) ----------
+function tqli(d,e,n,z){for(let i=1;i<n;i++)e[i-1]=e[i];e[n-1]=0;
+  for(let l=0;l<n;l++){let iter=0,m;do{for(m=l;m<n-1;m++){const dd=Math.abs(d[m])+Math.abs(d[m+1]);if(Math.abs(e[m])<=1e-14*dd)break;}
+    if(m!==l){if(iter++>=60)break;let g=(d[l+1]-d[l])/(2*e[l]),r=Math.hypot(g,1);g=d[m]-d[l]+e[l]/(g+(g>=0?r:-r));
+      let s=1,c=1,p=0,i,early=false;
+      for(i=m-1;i>=l;i--){let f=s*e[i];const b=c*e[i];r=Math.hypot(f,g);e[i+1]=r;if(r===0){d[i+1]-=p;e[m]=0;early=true;break;}
+        s=f/r;c=g/r;g=d[i+1]-p;r=(d[i]-g)*s+2*c*b;p=s*r;d[i+1]=g+p;g=c*r-b;
+        for(let k=0;k<n;k++){f=z[k*n+i+1];z[k*n+i+1]=s*z[k*n+i]+c*f;z[k*n+i]=c*z[k*n+i]-s*f;}}
+      if(early)continue;d[l]-=p;e[l]=g;e[m]=0;}}while(m!==l);}}
+function epsAt(e,ln,t,off){const {idx}=S;const v=ln.axis==='v';const x=v?ln.pos+off:t,y=v?t:ln.pos+off;return idx(x+A,y+A);}
+function lineMode(ln,e,q,m,plane){const n=ln.cells.length;
+  if(plane){let s=0;ln.cells.forEach(t=>s+=e[epsAt(e,ln,t,0)]);const ev=q*s/n,cb=1-ev/2;const phi=new Float64Array(n).fill(1/Math.sqrt(n));return {ok:cb>-1&&cb<1,phi,cb,sb:Math.sqrt(Math.max(0,1-cb*cb))};}
+  const d=new Float64Array(n),ee=new Float64Array(n),z=new Float64Array(n*n);
+  for(let k=0;k<n;k++){d[k]=-2+q*e[epsAt(e,ln,ln.cells[k],0)];ee[k]=k?1:0;z[k*n+k]=1;}
+  tqli(d,ee,n,z);const order=[...d.keys()].sort((a,b)=>d[b]-d[a]);if(m>=n)return {ok:false};
+  const c=order[m],ev=d[c],cb=1-ev/2;const phi=new Float64Array(n);let nn=0,mx=0,sg=1;
+  for(let k=0;k<n;k++){phi[k]=z[k*n+c];nn+=phi[k]*phi[k];if(Math.abs(phi[k])>mx){mx=Math.abs(phi[k]);sg=Math.sign(phi[k]);}}
+  nn=Math.sqrt(nn);for(let k=0;k<n;k++)phi[k]*=sg/nn;
+  // guided if the mode decays toward the window edges
+  const edge=Math.max(phi[0]*phi[0],phi[n-1]*phi[n-1]),pk=mx*mx/nn/nn;
+  return {ok:cb>-1&&cb<1,trunc:edge>0.05*pk,phi,cb,sb:Math.sqrt(Math.max(0,1-cb*cb))};}
+
+// ---------- evaluation ----------
+function evaluate(withGrad){const t0=Date.now();
+  const {NXi,NYi,idx,N,dx,sources,dets,terms,regs}=S;const {ei,e}=buildEps();
+  const ns=sources.length,nd=dets.length;
+  const readings=sources.map(()=>new Array(nd).fill(NaN)),errs=S.errors.slice();
+  const gEps=withGrad?new Float64Array(NXi*NYi):null;let fields=new Array(ns).fill(null);
+  // explain mode: keep the adjoint fields and the sensitivity dJ/dε of every cell in the domain, not only in design regions
+  const xpl=withGrad&&S.opt&&S.opt.explain;const sens=xpl?new Float64Array(NXi*NYi):null,adj=new Array(ns).fill(null);
+  const lams=[...new Set(sources.map(s=>s.lam))];
+  for(const lam of lams){const q=Math.pow(2*Math.PI/lam*dx,2);factor(e,q);
+    sources.forEach((src,si)=>{if(src.lam!==lam)return;
+      const md=lineMode(src,e,q,src.mode,src.st==='plane');if(!md.ok){errs.push(src.id+': mode TE'+src.mode+' does not propagate here. Use a lower mode or a wider waveguide.');return;}
+      if(md.trunc&&src.st!=='plane')errs.push(src.id+' is shorter than the mode. Extend the line a little beyond the waveguide on both sides.');
+      const br=new Float64Array(N),bi=new Float64Array(N),c=md.cb,s=md.sb;
+      src.cells.forEach((t,k)=>{const i0=epsAt(e,src,t,0),i1=epsAt(e,src,t,src.dir);br[i0]+=md.phi[k];br[i1]+=-c*md.phi[k];bi[i1]+=s*md.phi[k];});
+      solve(br,bi);fields[si]=[br,bi];const Pin=s;let I0=0;md.phi.forEach(v=>I0=Math.max(I0,v*v));
+      const Ur=new Float64Array(N),Ui=new Float64Array(N);let need=false;
+      dets.forEach((dt,di)=>{const wsum=withGrad?terms.filter(t=>t.si===si&&t.di===di).reduce((a,t)=>a+t.w,0):0;
+        let F=NaN;
+        if(dt.kind==='probe'){const p=idx(dt.x+A,dt.y+A);F=(br[p]**2+bi[p]**2)/I0;
+          if(wsum){Ur[p]+=wsum*2*br[p]/I0;Ui[p]+=-wsum*2*bi[p]/I0;need=true;}}
+        else if(dt.kind==='gauss'){const k0=Math.sqrt(q)/dx;let Phi=0;const rows=[];let cr=0,ci=0,NE=0,Gn=0;
+          dt.cells.forEach(t=>{const p0=epsAt(e,dt,t,0),pp=epsAt(e,dt,t,dt.dir),pm=epsAt(e,dt,t,-dt.dir);const Dr=br[pp]-br[pm],Di=bi[pp]-bi[pm];Phi+=(br[p0]*Di-bi[p0]*Dr)/2;
+            const z=(t+0.5)*dx,nl=Math.sqrt(e[p0]),amp=Math.exp(-(((z-dt.z0)/dt.w0)**2)),ph=k0*nl*Math.sin(dt.theta*Math.PI/180)*z;const gr=amp*Math.cos(ph),gi=amp*Math.sin(ph);
+            cr+=gr*br[p0]+gi*bi[p0];ci+=gr*bi[p0]-gi*br[p0];NE+=br[p0]**2+bi[p0]**2;Gn+=amp*amp;rows.push([p0,pp,pm,Dr,Di,gr,gi]);});
+          Phi/=Pin;const c2=cr*cr+ci*ci,O=NE>0?c2/(Gn*NE):0;F=Phi*O;
+          if(wsum){const k=wsum/Pin;
+            rows.forEach(([p0,pp,pm,Dr,Di,gr,gi])=>{
+              // flux part: O * dPhi
+              Ur[p0]+=O*k*Di/2;Ui[p0]+=O*k*Dr/2;Ur[pp]+=-O*k*bi[p0]/2;Ui[pp]+=-O*k*br[p0]/2;Ur[pm]+=O*k*bi[p0]/2;Ui[pm]+=O*k*br[p0]/2;
+              // overlap part: Phi * dO, with d|c|^2 -> 2 conj(c) conj(g), dN -> 2 conj(E)
+              const uc_r=2*(cr*gr-ci*gi),uc_i=-2*(cr*gi+ci*gr),un_r=2*br[p0],un_i=-2*bi[p0];const den=Gn*NE*NE;
+              Ur[p0]+=wsum*Phi*(uc_r*NE-c2*un_r)/den;Ui[p0]+=wsum*Phi*(uc_i*NE-c2*un_i)/den;});need=true;}}
+        else if(dt.kind==='flux'){F=0;const ups=[];
+          dt.cells.forEach(t=>{const p0=epsAt(e,dt,t,0),pp=epsAt(e,dt,t,dt.dir),pm=epsAt(e,dt,t,-dt.dir);
+            const Dr=br[pp]-br[pm],Di=bi[pp]-bi[pm];F+=(br[p0]*Di-bi[p0]*Dr)/2;ups.push([p0,pp,pm,Dr,Di]);});
+          F/=Pin;if(F<-0.05)errs.push(dt.id+' measures negative flux: light crosses it against its arrow. Flip its direction in the inspector.');if(wsum){const k=wsum/Pin;ups.forEach(([p0,pp,pm,Dr,Di])=>{Ur[p0]+=k*Di/2;Ui[p0]+=k*Dr/2;Ur[pp]+=-k*bi[p0]/2;Ui[pp]+=-k*br[p0]/2;Ur[pm]+=k*bi[p0]/2;Ui[pm]+=k*br[p0]/2;});need=true;}}
+        else{const mm=lineMode(dt,e,q,dt.mode,false);if(!mm.ok){errs.push(dt.id+': mode TE'+dt.mode+' does not propagate at this monitor.');return;}
+          if(mm.trunc&&si===0)errs.push(dt.id+' is shorter than the mode. Extend the line a little beyond the waveguide.');
+          let c0r=0,c0i=0,c1r=0,c1i=0;dt.cells.forEach((t,k)=>{const p0=epsAt(e,dt,t,0),p1=epsAt(e,dt,t,dt.dir);c0r+=mm.phi[k]*br[p0];c0i+=mm.phi[k]*bi[p0];c1r+=mm.phi[k]*br[p1];c1i+=mm.phi[k]*bi[p1];});
+          const cb=mm.cb,sb=mm.sb;const w0r=0.5,w0i=cb/(2*sb),w1r=0,w1i=-1/(2*sb);
+          const fr=w0r*c0r-w0i*c0i+w1r*c1r-w1i*c1i,fi=w0r*c0i+w0i*c0r+w1r*c1i+w1i*c1r;
+          F=(fr*fr+fi*fi)*sb/Pin;
+          {const ebr=cb,ebi=sb;const nr=c0r*ebr-c0i*ebi-c1r,ni=c0r*ebi+c0i*ebr-c1i;const Bk=(nr*nr+ni*ni)/(4*sb*sb)*sb/Pin;
+           if(F<0.02&&Bk>0.1)errs.push(dt.id+' sees light travelling against its arrow ('+(Bk*100).toFixed(0)+'% backward). Flip its direction in the inspector.');}
+          if(wsum){const kr=wsum*2*sb/Pin*fr,ki=-wsum*2*sb/Pin*fi; // coef = 2 (sb/Pin) conj(f)
+            const a0r=kr*w0r-ki*w0i,a0i=kr*w0i+ki*w0r,a1r=kr*w1r-ki*w1i,a1i=kr*w1i+ki*w1r;
+            dt.cells.forEach((t,k)=>{const p0=epsAt(e,dt,t,0),p1=epsAt(e,dt,t,dt.dir);Ur[p0]+=a0r*mm.phi[k];Ui[p0]+=a0i*mm.phi[k];Ur[p1]+=a1r*mm.phi[k];Ui[p1]+=a1i*mm.phi[k];});need=true;}}
+        readings[si][di]=F;});
+      if(withGrad&&need){solve(Ur,Ui);if(xpl){adj[si]=[Ur,Ui];for(let y=0;y<NYi;y++)for(let x=0;x<NXi;x++){const p=idx(x+A,y+A);sens[y*NXi+x]+=-q*(Ur[p]*br[p]-Ui[p]*bi[p]);}}regs.forEach(r=>{for(let j=0;j<r.ny;j++)for(let i=0;i<r.nx;i++){const x=r.i0+i,y=r.j0+j,p=idx(x+A,y+A);gEps[y*NXi+x]+=-q*(Ur[p]*br[p]-Ui[p]*bi[p]);}});}
+    });}
+  let J=0;const tv=(S.terms_raw||[]).map(()=>NaN);
+  terms.forEach(t=>{const v=readings[t.si][t.di];if(isFinite(v))J+=t.w*v;});
+  if(withGrad)regs.forEach(r=>{const {nx,ny,p,rf}=r,g=new Float64Array(nx*ny);
+    for(let j=0;j<ny;j++)for(let i=0;i<nx;i++)g[j*nx+i]=gEps[(r.j0+j)*NXi+r.i0+i]*(r.epsHi-S.epsBg);
+    if(beta>0){const den=2*Math.tanh(beta*0.5);for(let k=0;k<nx*ny;k++){const th=Math.tanh(beta*(rf[k]-0.5));g[k]*=beta*(1-th*th)/den;}}
+    const K=kern(r.filt),gx=new Float64Array(nx*ny);
+    for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){let ws=0;for(const[a,b,w] of K){const ii=i+a,jj=j+b;if(ii<0||jj<0||ii>=nx||jj>=ny)continue;ws+=w;}
+      for(const[a,b,w] of K){const ii=i+a,jj=j+b;if(ii<0||jj<0||ii>=nx||jj>=ny)continue;gx[jj*nx+ii]+=w/ws*g[j*nx+i];}}
+    if(r.sym==='ud')for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){const a=j*nx+i,b=(ny-1-j)*nx+i;if(b<=a)continue;const m=(gx[a]+gx[b])/2;gx[a]=m;gx[b]=m;}
+    if(r.sym==='cols')for(let i=0;i<nx;i++){let s=0;for(let j=0;j<ny;j++)s+=gx[j*nx+i];s/=ny;for(let j=0;j<ny;j++)gx[j*nx+i]=s;}
+    if(r.sym==='lr')for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){const a=j*nx+i,b=j*nx+(nx-1-i);if(b<=a)continue;const m=(gx[a]+gx[b])/2;gx[a]=m;gx[b]=m;}
+    // stay close to a reference design (e.g. a hand drawing): penalty scaled to the size of the physics gradient, so its strength is meaningful
+    if(p.anchor&&p.lam>0&&p.anchor.length===gx.length){let rms=0;for(let k=0;k<gx.length;k++)rms+=gx[k]*gx[k];rms=Math.sqrt(rms/gx.length)||1e-12;
+      for(let k=0;k<gx.length;k++)gx[k]-=p.lam*rms*2*(p.x[k]-p.anchor[k]);}
+    // only pixels inside the mask may change
+    if(p.mask&&p.mask.length===gx.length)for(let k=0;k<gx.length;k++)if(!p.mask[k])gx[k]=0;
+    r.grad=gx;});
+  lastMs=Date.now()-t0;last={readings,J,fields,ei,errs,sens,adj};return last;}
+
+function step(){const t=it+1;evaluate(true);
+  S.regs.forEach(r=>{const {p,grad}=r;const lr=0.05,b1=0.9,b2=0.99;
+    for(let k=0;k<p.x.length;k++){p.mA[k]=b1*p.mA[k]+(1-b1)*grad[k];p.vA[k]=b2*p.vA[k]+(1-b2)*grad[k]*grad[k];
+      const mh=p.mA[k]/(1-Math.pow(b1,t)),vh=p.vA[k]/(1-Math.pow(b2,t));p.x[k]=Math.min(1,Math.max(0,p.x[k]+lr*mh/(Math.sqrt(vh)+1e-8)));}});
+  it++;const every=(S.opt&&S.opt.betaEvery)||20;if(bin&&it%every===0&&beta<48)beta=Math.min(48,beta*1.5);}
+// after an edit: keep the current shape, but restart the sharpening schedule and optimizer memory so gradients flow again
+function softRestart(){regions.forEach(p=>{p.mA.fill(0);p.vA.fill(0);});it=0;beta=bin?1:0;}
+function resetDesign(){regions.forEach(p=>{p.x.fill(0.5);p.mA.fill(0);p.vA.fill(0);});it=0;beta=bin?1:0;}
+
+function post(){if(!last)return;const {NXi,NYi}=S;const n=new Float32Array(NXi*NYi);for(let k=0;k<n.length;k++)n[k]=Math.sqrt(last.ei[k]);
+  let f=null;const fs=last.fields[Math.min(view,last.fields.length-1)];
+  if(fs){f=[new Float32Array(NXi*NYi),new Float32Array(NXi*NYi)];for(let y=0;y<NYi;y++)for(let x=0;x<NXi;x++){const p=S.idx(x+A,y+A);f[0][y*NXi+x]=fs[0][p];f[1][y*NXi+x]=fs[1][p];}}
+  self.postMessage({type:'state',it,J:last.J,ms:lastMs,readings:last.readings,errs:last.errs,NXi,NYi,dx:S.dx,n,f,running,beta,
+    srcIds:S.sources.map(s=>s.id),detIds:S.dets.map(d=>d.id),N:S.N,tag,...explainData()});}
+function explainData(){if(!(S.opt&&S.opt.explain)||!last)return {};const {NXi,NYi}=S,o={};const v=Math.min(view,last.fields.length-1);
+  const a=last.adj&&last.adj[v];if(a){o.adj=[new Float32Array(NXi*NYi),new Float32Array(NXi*NYi)];for(let y=0;y<NYi;y++)for(let x=0;x<NXi;x++){const p=S.idx(x+A,y+A);o.adj[0][y*NXi+x]=a[0][p];o.adj[1][y*NXi+x]=a[1][p];}}
+  if(last.sens)o.sens=Float32Array.from(last.sens);
+  const r=S.regs[0];if(r){o.reg={i0:r.i0,j0:r.j0,nx:r.nx,ny:r.ny,x:Float32Array.from(r.rp)};if(r.grad)o.reg.grad=Float32Array.from(r.grad);}
+  return o;}
+function loop(){if(!running)return;if(S.opt&&S.opt.maxIt&&it>=S.opt.maxIt){running=false;evaluate(false);post();return;}step();post();setTimeout(loop,0);}
+self.onmessage=ev=>{const m=ev.data;
+  if(m.cmd==='scene'){batchId=null;S=compile(m.scene);S.terms_raw=m.scene.terms;if(!m.keep)softRestart();if(!running&&!m.noeval){evaluate(false);post();}}
+  // load a pattern (e.g. a hand-painted design) into a design region; bin/beta choose exact pixels (bin false) or a projected seed for optimization
+  else if(m.cmd==='setx'){running=false;tag=m.tag|0;const p=regions.get(m.id);if(p&&p.x.length===m.x.length){p.x.set(m.x);p.mA.fill(0);p.vA.fill(0);p.anchor=m.anchor?Float64Array.from(m.anchor):null;p.lam=+m.lam||0;p.mask=m.mask?Uint8Array.from(m.mask):null;}it=0;bin=!!m.bin;beta=bin?(m.beta||1):0;if(S){evaluate(false);post();}}
+  else if(m.cmd==='run'){if(!running&&S){running=true;loop();}}
+  else if(m.cmd==='pause'){running=false;if(S)post();}
+  else if(m.cmd==='step'){running=false;step();evaluate(false);post();}
+  else if(m.cmd==='reset'){running=false;resetDesign();evaluate(false);post();}
+  else if(m.cmd==='bin'){bin=m.v;beta=bin?Math.max(1,beta||1):0;if(!running){evaluate(false);post();}}
+  else if(m.cmd==='view'){view=m.v;post();}
+  else if(m.cmd==='batch'){const id=m.id;let i=0;batchId=id;const nxt=()=>{if(batchId!==id||i>=m.scenes.length){if(batchId===id)self.postMessage({type:'batchdone',id});return;}
+      S=compile(m.scenes[i]);const r=evaluate(false);self.postMessage({type:'batch',id,i,readings:r.readings,errs:r.errs});i++;setTimeout(nxt,0);};nxt();}
+  else if(m.cmd==='stopbatch'){batchId=null;}
+  // forward + adjoint solve without changing the design
+  else if(m.cmd==='grad'){running=false;tag=m.tag|0;evaluate(true);post();}
+  // timing: median cost of a forward-only evaluation and of forward + adjoint, measured back to back
+  else if(m.cmd==='bench'){const keep=last,n=m.n||5,med=a=>a.sort((x,y)=>x-y)[a.length>>1],T=f=>{const t0=performance.now();f();return performance.now()-t0;};
+    evaluate(true);const f=[],g=[];for(let i=0;i<n;i++){f.push(T(()=>evaluate(false)));g.push(T(()=>evaluate(true)));}last=keep;
+    self.postMessage({type:'bench',fwd:med(f),grad:med(g)});}
+  // brute force: change one design parameter, re-simulate, report the figure of merit, restore
+  else if(m.cmd==='probe'){const r=S.regs[0];if(!r)return;const keep=last,k=m.k,x0=r.p.x[k];r.p.x[k]=x0+m.d;const res=evaluate(false);r.p.x[k]=x0;
+    self.postMessage({type:'probe',id:m.id,k,d:m.d,J:res.J,ms:lastMs});last=keep;}
+};
+
+</script>
+<script>
+// Shared helpers for the teaching pages: theme colours, animated field rendering, small quizzes.
+const FV=(function(){
+function hex(h){h=h.replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
+function colors(){const s=getComputedStyle(document.documentElement),g=k=>s.getPropertyValue(k).trim();
+  return {fg:g('--fg'),muted:g('--muted'),line:g('--line'),grid:g('--grid'),panel:g('--panel'),accent:g('--accent'),edge:g('--edge'),mono:g('--f-mono'),
+    good:g('--good'),bad:g('--bad'),ray:g('--ray'),core:g('--core'),clad:g('--clad'),
+    neg:hex(g('--fneg')),mid:hex(g('--fmid')),pos:hex(g('--fpos')),hot:hex(g('--hot')),lo:hex(g('--lo')),hi:hex(g('--hi'))};}
+const mix=(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];
+function prep(cv){const r=cv.getBoundingClientRect(),dpr=window.devicePixelRatio||1;const W=Math.max(1,Math.round(r.width*dpr)),H=Math.max(1,Math.round(r.height*dpr));
+  if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;}const ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,r.width,r.height);return {ctx,W:r.width,H:r.height};}
+const off=document.createElement('canvas'),oc=off.getContext('2d');
+function contour(ctx,fld,nx,ny,lv,sx,sy,ox,oy){ctx.beginPath();
+  for(let y=0;y<ny-1;y++)for(let x=0;x<nx-1;x++){const a=fld[y*nx+x],b=fld[y*nx+x+1],c=fld[(y+1)*nx+x+1],d=fld[(y+1)*nx+x];
+    const code=(a>lv?8:0)|(b>lv?4:0)|(c>lv?2:0)|(d>lv?1:0);if(code===0||code===15)continue;
+    const PX=t=>ox+(x+0.5+t)*sx,PY=t=>oy+(y+0.5+t)*sy,it=(p,q)=>(lv-p)/(q-p);
+    const top=[PX(it(a,b)),PY(0)],right=[PX(1),PY(it(b,c))],bot=[PX(it(d,c)),PY(1)],left=[PX(0),PY(it(a,d))];
+    const sg=(p,q)=>{ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);};
+    switch(code){case 1:case 14:sg(left,bot);break;case 2:case 13:sg(bot,right);break;case 3:case 12:sg(left,right);break;case 4:case 11:sg(top,right);break;
+      case 5:sg(left,top);sg(bot,right);break;case 6:case 9:sg(top,bot);break;case 7:case 8:sg(left,top);break;case 10:sg(left,bot);sg(top,right);break;}}ctx.stroke();}
+// draw a solver state into a canvas, keeping the physical aspect ratio; returns the mapping
+function field(cv,st,C,phase,mode,maxH,vector){const r=cv.parentElement.getBoundingClientRect();const Wp=r.width,asp=st.NYi/st.NXi;
+  const H=Math.min(maxH||560,Wp*asp);cv.style.height=H+'px';const {ctx,W}=prep(cv);
+  const s=Math.min(W/st.NXi,H/st.NYi),bw=st.NXi*s,bh=st.NYi*s,ox=(W-bw)/2,oy=(H-bh)/2;
+  const nx=st.NXi,ny=st.NYi,f=st.f,n=st.n;let nmin=1e9,nmax=-1e9;for(const v of n){if(v<nmin)nmin=v;if(v>nmax)nmax=v;}const nr=nmax-nmin||1;
+  let mx=1e-12;if(f)for(let k=0;k<nx*ny;k++){const v=mode==='int'?f[0][k]**2+f[1][k]**2:Math.hypot(f[0][k],f[1][k]);if(v>mx)mx=v;}
+  off.width=nx;off.height=ny;const im=oc.createImageData(nx,ny);const c=Math.cos(phase),sn=Math.sin(phase);
+  for(let k=0;k<nx*ny;k++){let col;
+    if(!f)col=mix(C.lo,C.hi,(n[k]-nmin)/nr);
+    else if(mode==='int'){const v=Math.sqrt((f[0][k]**2+f[1][k]**2)/mx);col=v<0.65?mix(C.mid,C.pos,v/0.65):mix(C.pos,C.hot,(v-0.65)/0.35);}
+    else{const v=(f[0][k]*c+f[1][k]*sn)/mx*1.35;col=v<0?mix(C.mid,C.neg,Math.min(1,-v)):mix(C.mid,C.pos,Math.min(1,v));}
+    im.data[4*k]=col[0];im.data[4*k+1]=col[1];im.data[4*k+2]=col[2];im.data[4*k+3]=255;}
+  oc.putImageData(im,0,0);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(off,ox,oy,bw,bh);
+  if(f&&!vector){ctx.strokeStyle=C.edge;ctx.globalAlpha=0.65;ctx.lineWidth=1.2;contour(ctx,n,nx,ny,nmin+0.5*nr,s,s,ox,oy);ctx.globalAlpha=1;}
+  ctx.strokeStyle=C.line;ctx.lineWidth=1;ctx.strokeRect(ox,oy,bw,bh);
+  return {ctx,X:u=>ox+u/st.dx*s,Y:u=>oy+u/st.dx*s,ox,oy,bw,bh,s};}
+// exact device outline from the scene geometry, drawn as smooth vector curves (instead of tracing the pixel grid)
+function outline(m,scene,C){const {ctx,X,Y}=m;ctx.save();ctx.beginPath();ctx.rect(m.ox,m.oy,m.bw,m.bh);ctx.clip();ctx.strokeStyle=C.edge;ctx.globalAlpha=0.7;ctx.lineWidth=1.3;ctx.lineJoin='round';
+  scene.objs.forEach(o=>{if(o.kind==='rect'){ctx.strokeRect(X(Math.min(o.x0,o.x1)),Y(Math.min(o.y0,o.y1)),X(Math.abs(o.x1-o.x0))-X(0),Y(Math.abs(o.y1-o.y0))-Y(0));}
+    else if(o.kind==='path'){const P=o.pts,n=P.length,hw=o.w/2;const closed=Math.hypot(P[0][0]-P[n-1][0],P[0][1]-P[n-1][1])<1e-6;
+      const side=s=>{const out=[];for(let i=0;i<n;i++){const a=P[Math.max(0,i-1)],b=P[Math.min(n-1,i+1)];let tx=b[0]-a[0],ty=b[1]-a[1];if(closed&&(i===0||i===n-1)){const p=P[n-2],q=P[1];tx=q[0]-p[0];ty=q[1]-p[1];}
+        const L=Math.hypot(tx,ty)||1;out.push([P[i][0]-s*ty/L*hw,P[i][1]+s*tx/L*hw]);}return out;};
+      [1,-1].forEach(s=>{const q=side(s);ctx.beginPath();q.forEach(([x,y],i)=>i?ctx.lineTo(X(x),Y(y)):ctx.moveTo(X(x),Y(y)));ctx.stroke();});}});
+  ctx.restore();}
+// tiny multiple-choice checks
+function quiz(el,q){el.classList.add('quiz');el.innerHTML=`<div class="qhead">Check yourself</div><p class="qq">${q.q}</p><div class="qopts">${q.opts.map((o,i)=>`<button data-i="${i}">${o}</button>`).join('')}</div><p class="qfb" aria-live="polite"></p>`;
+  el.querySelectorAll('button').forEach(b=>b.onclick=()=>{const i=+b.dataset.i,ok=i===q.ok;el.querySelectorAll('button').forEach(x=>x.classList.remove('right','wrong'));b.classList.add(ok?'right':'wrong');
+    el.querySelector('.qfb').innerHTML=(ok?'<b>Right.</b> ':'<b>Not quite.</b> ')+q.why;});}
+return {colors,prep,field,contour,mix,quiz,outline};
+})();
+
+(function(){
+const $=id=>document.getElementById(id);let C=FV.colors();
+const NC=2.2,NB=1.45,DE=NC*NC-NB*NB,DX=0.08,LAM=1.55,K2=Math.pow(2*Math.PI/LAM*DX,2);
+const OBJS=[{id:'WG1',kind:'rect',x0:0,y0:2.24,x1:1.2,y1:2.64,n:NC},{id:'WG2',kind:'rect',x0:2.24,y0:3.68,x1:2.64,y1:4.88,n:NC},
+  {id:'S1',kind:'source',st:'mode',axis:'v',pos:0.44,a0:1.44,a1:3.44,dir:1,lam:LAM,mode:0},{id:'M1',kind:'mode',axis:'h',pos:4.36,a0:1.44,a1:3.44,dir:1,mode:0}];
+const TERMS=[{sign:1,w:1,det:'M1',src:'S1'}];
+const scene=(filt,opt)=>({W:4.88,H:4.88,dx:DX,bg:NB,objs:OBJS.concat([{id:'D1',kind:'design',x0:1.2,y0:1.2,x1:3.68,y1:3.68,n:NC,filt,sym:'none'}]),terms:TERMS,opt:Object.assign({explain:true},opt||{})});
+const mk=()=>new Worker(URL.createObjectURL(new Blob([$('wsrc').textContent],{type:'text/javascript'})));
+const fmtE=v=>{if(!isFinite(v))return '–';const a=Math.abs(v);return a===0?'0':(a>=0.01&&a<100)?v.toFixed(4):v.toExponential(4);};
+const pct=v=>(v*100).toFixed(1)+' %';
+
+// ---------- worker A: the fixed empty-region problem of steps 1-6 ----------
+const wA=mk();let S=null,probeId=0;const waiters=new Map();
+wA.onmessage=ev=>{const m=ev.data;if(m.type==='state'){S=m;onState();}else if(m.type==='bench'){fwdMs=Math.round(m.fwd);gradMs=Math.round(m.grad);upd3();updCost();if(!L)reset7();}else if(m.type==='probe'){const f=waiters.get(m.id);waiters.delete(m.id);f&&f(m);}};
+const probe=(k,d)=>new Promise(res=>{const id=++probeId;waiters.set(id,res);wA.postMessage({cmd:'probe',id,k,d});});
+const NXR=31;
+wA.postMessage({cmd:'scene',scene:scene(0),noeval:true});
+wA.postMessage({cmd:'setx',id:'D1',x:new Float64Array(NXR*NXR),bin:false});
+wA.postMessage({cmd:'grad'});
+let fwdMs=NaN,gradMs=NaN;const probeMs=[];
+function onState(){
+  $('r1').innerHTML=`<div><span>Figure of merit (FOM)</span><b>${pct(S.J)}</b></div><div><span>Design pixels</span><b>961</b></div><div><span>Grid cells</span><b>${S.N.toLocaleString('en')}</b></div>`;
+  $('r2').innerHTML=`<div><span>Light reaching the detector</span><b>${pct(S.J)}</b></div><div><span>Unknowns in A·E<sub>fwd</sub> = b</span><b>${S.N.toLocaleString('en')}</b></div>`;
+  updCost();upd3();
+  // calibrate the cost of one forward simulation after the browser has warmed up, then time a full gradient again
+  if(!calib){calib=true;wA.postMessage({cmd:'bench',n:5});}}
+let calib=false;
+
+// ---------- drawing helpers ----------
+let map={};
+function stLike(f){return {NXi:S.NXi,NYi:S.NYi,dx:S.dx,n:S.n,f};}
+const maxH=()=>Math.min(window.innerHeight*0.62,620);
+function region(m,col){const r=S.reg,{ctx,s,ox,oy}=m;ctx.save();ctx.setLineDash([5,4]);ctx.strokeStyle=col||C.accent;ctx.lineWidth=1.4;ctx.strokeRect(ox+r.i0*s,oy+r.j0*s,r.nx*s,r.ny*s);ctx.restore();}
+function lines(m,small){const {ctx,X,Y}=m;OBJS.forEach(o=>{if(o.kind!=='source'&&o.kind!=='mode')return;const src=o.kind==='source';ctx.strokeStyle=src?C.ray:C.good;ctx.lineWidth=small?1.6:2.4;ctx.beginPath();
+  if(o.axis==='v'){ctx.moveTo(X(o.pos),Y(o.a0));ctx.lineTo(X(o.pos),Y(o.a1));}else{ctx.moveTo(X(o.a0),Y(o.pos));ctx.lineTo(X(o.a1),Y(o.pos));}ctx.stroke();
+  if(small)return;const lab=src?'SOURCE':'DETECTOR';ctx.font=`600 11px ${C.mono}`;const tw=ctx.measureText(lab).width;const lx=o.axis==='v'?X(o.pos)-tw/2:X(o.a1)+5,ly=o.axis==='v'?Y(o.a0)-17:Y(o.pos)-8;
+  ctx.fillStyle=C.panel;ctx.globalAlpha=0.85;ctx.fillRect(lx-3,ly,tw+6,16);ctx.globalAlpha=1;ctx.fillStyle=src?C.ray:C.good;ctx.textBaseline='top';ctx.textAlign='left';ctx.fillText(lab,lx,ly+2);});}
+// diverging scalar map with the structure outline (vals: NXi*NYi); norm: value that maps to full color
+const off=document.createElement('canvas'),oc=off.getContext('2d');
+function scalar(cv,vals,norm,mh,nx,ny,i0,j0,nArr){nx=nx||S.NXi;ny=ny||S.NYi;const r=cv.parentElement.getBoundingClientRect();const H=Math.min(mh,r.width*ny/nx);cv.style.height=H+'px';const {ctx,W}=FV.prep(cv);
+  const s=Math.min(W/nx,H/ny),bw=nx*s,bh=ny*s,ox=(W-bw)/2,oy=(H-bh)/2;off.width=nx;off.height=ny;const im=oc.createImageData(nx,ny);
+  for(let k=0;k<nx*ny;k++){const v=Math.max(-1,Math.min(1,vals[k]/norm));const c=v<0?FV.mix(C.mid,C.neg,-v):FV.mix(C.mid,C.pos,v);im.data[4*k]=c[0];im.data[4*k+1]=c[1];im.data[4*k+2]=c[2];im.data[4*k+3]=255;}
+  oc.putImageData(im,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(off,ox,oy,bw,bh);
+  const n=nArr||S.n;if(n){let a=1e9,b=-1e9;for(const v of n){a=Math.min(a,v);b=Math.max(b,v);}if(b-a>0.1){ctx.strokeStyle=C.edge;ctx.globalAlpha=0.6;ctx.lineWidth=1.1;FV.contour(ctx,n,nx,ny,(a+b)/2,s,s,ox,oy);ctx.globalAlpha=1;}}
+  ctx.strokeStyle=C.line;ctx.lineWidth=1;ctx.strokeRect(ox,oy,bw,bh);
+  return {ctx,s,ox,oy,bw,bh,X:u=>ox+u/DX*s,Y:u=>oy+u/DX*s};}
+function regMax(vals){const r=S.reg;let m=1e-30;for(let j=0;j<r.ny;j++)for(let i=0;i<r.nx;i++)m=Math.max(m,Math.abs(vals[(r.j0+j)*S.NXi+r.i0+i]));return m;}
+function snapshot(f,ph){const n=S.NXi*S.NYi,o=new Float32Array(n),c=Math.cos(ph),s=Math.sin(ph);for(let k=0;k<n;k++)o[k]=f[0][k]*c+f[1][k]*s;return o;}
+function absMax(a){let m=1e-30;for(const v of a)m=Math.max(m,Math.abs(v));return m;}
+
+// ---------- step 3: brute force ----------
+const tapped=new Map();let busy3=false;
+function upd3(){const n=tapped.size;$('cnt3').innerHTML=`${n} of 961 pixels tested · one simulation each (${isFinite(fwdMs)?fwdMs+' ms':'…'})<br>All 961 pixels: ${isFinite(fwdMs)?((961*fwdMs/1000).toFixed(1)+' s'):'…'} for one gradient. An optimization needs about 100 gradients.`;}
+async function test(k){if(tapped.has(k))return;tapped.set(k,null);const m=await probe(k,1);probeMs.push(m.ms);tapped.set(k,m.J-S.J);upd3();}
+$('c3').addEventListener('click',async e=>{if(!S||!map.c3)return;const r=$('c3').getBoundingClientRect(),m=map.c3;const gx=Math.floor((e.clientX-r.left-m.ox)/m.s)-S.reg.i0,gy=Math.floor((e.clientY-r.top-m.oy)/m.s)-S.reg.j0;
+  if(gx<0||gy<0||gx>=S.reg.nx||gy>=S.reg.ny)return;await test(gy*S.reg.nx+gx);});
+$('b3rand').onclick=async()=>{if(busy3||!S)return;busy3=true;$('b3rand').disabled=true;for(let q=0;q<20;q++){let k;do{k=Math.floor(Math.random()*961);}while(tapped.has(k));await test(k);}busy3=false;$('b3rand').disabled=false;};
+$('b3clr').onclick=()=>{tapped.clear();upd3();};
+function drawTaps(m,ring){if(!tapped.size)return;let mx=1e-30;tapped.forEach(v=>{if(v!==null)mx=Math.max(mx,Math.abs(v));});const {ctx,s,ox,oy}=m;const r=S.reg;
+  tapped.forEach((v,k)=>{const i=k%r.nx,j=(k/r.nx)|0,x=ox+(r.i0+i)*s,y=oy+(r.j0+j)*s;
+    if(ring){ctx.strokeStyle=C.edge;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(x+s/2,y+s/2,Math.max(3,s*0.8),0,2*Math.PI);ctx.stroke();return;}
+    if(v===null){ctx.strokeStyle=C.edge;ctx.strokeRect(x+0.5,y+0.5,s-1,s-1);return;}
+    const t=Math.max(-1,Math.min(1,v/mx));const c=t<0?FV.mix(C.mid,C.neg,Math.min(1,0.25-t)):FV.mix(C.mid,C.pos,Math.min(1,0.25+t));ctx.fillStyle=`rgb(${c.map(Math.round).join(',')})`;ctx.fillRect(x,y,s+0.3,s+0.3);});}
+
+// ---------- step 4 view toggle ----------
+let v4='adj';$('v4').querySelectorAll('button').forEach(b=>b.onclick=()=>{v4=b.dataset.v;$('v4').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));});
+
+// ---------- step 5: finite-difference check ----------
+$('b5chk').onclick=async()=>{if(!S||!S.reg.grad)return;$('b5chk').disabled=true;$('st5').textContent='Running 10 extra simulations…';$('st5').classList.add('busy');
+  const h=1e-3,rows=[];const r=S.reg;
+  const cand=[...Array(961).keys()].sort((a,b)=>Math.abs(r.grad[b])-Math.abs(r.grad[a]));const pick=[cand[0],cand[40],cand[150],cand[400],cand[800]];
+  for(const k of pick){const p=await probe(k,h),m=await probe(k,-h);const fd=(p.J-m.J)/(2*h),ad=r.grad[k];rows.push([k,ad,fd]);}
+  $('tbl5').innerHTML=`<table class="chk"><thead><tr><th>Pixel</th><th>Adjoint</th><th>Brute force</th><th>Difference</th></tr></thead><tbody>${rows.map(([k,ad,fd])=>`<tr><td>(${k%31}, ${(k/31)|0})</td><td>${fmtE(ad)}</td><td>${fmtE(fd)}</td><td>${(Math.abs(ad-fd)/Math.max(1e-30,Math.abs(fd))*100).toExponential(1)} %</td></tr>`).join('')}</tbody></table><p class="note">dFOM/dρ: change of the FOM per unit change of one pixel's material fraction ρ (0 = cladding, 1 = core). Brute force uses central differences with Δρ = 10⁻³.</p>`;
+  $('st5').textContent='';$('st5').classList.remove('busy');$('b5chk').disabled=false;};
+
+// ---------- step 6: cost ----------
+function updCost(){if(!isFinite(fwdMs)||!isFinite(gradMs))return;const adj=Math.max(1,gradMs-fwdMs);
+  $('cost6').innerHTML=`<span>One simulation (on your device)</span><b>${fwdMs} ms</b>
+   <span class="hl">Gradient for all 961 pixels, adjoint method</span><b class="hl">${gradMs} ms</b><span class="bad">Gradient for all 961 pixels, brute force</span><b class="bad">${(961*fwdMs/1000).toFixed(1)} s</b>
+   <span>Speed-up</span><b>${Math.round(961*fwdMs/gradMs)}×</b>`;}
+
+// ---------- step 7: the full loop on a second worker (started after the timing benchmark, so the two do not compete) ----------
+const wB=mk();let L=null,hist=[],running7=false;const MAXIT=120;
+wB.onmessage=ev=>{const m=ev.data;if(m.type!=='state')return;if(!m.adj&&L&&L.adj){m.adj=L.adj;if(m.reg&&!m.reg.grad&&L.reg)m.reg.grad=L.reg.grad;}L=m;if(m.it>0&&(hist.length===0||hist[hist.length-1][0]!==m.it))hist.push([m.it,m.J]);running7=m.running;
+  $('b7run').textContent=m.running?'Pause':(m.it>=MAXIT?'Done':'Run');$('b7run').disabled=!m.running&&m.it>=MAXIT;
+  $('st7').textContent=`step ${m.it} · FOM = ${pct(m.J)}${m.running?' · sharpening '+m.beta.toFixed(0):''}`;drawJ();};
+function reset7(){hist=[];wB.postMessage({cmd:'scene',scene:scene(1,{maxIt:MAXIT,betaEvery:15}),noeval:true});wB.postMessage({cmd:'setx',id:'D1',x:new Float64Array(961).fill(0.5),bin:true,beta:1});wB.postMessage({cmd:'grad'});}
+$('b7run').onclick=()=>{if(running7)wB.postMessage({cmd:'pause'});else wB.postMessage({cmd:'run'});};
+$('b7step').onclick=()=>{wB.postMessage({cmd:'pause'});wB.postMessage({cmd:'step'});setTimeout(()=>wB.postMessage({cmd:'grad'}),0);};
+$('b7reset').onclick=()=>{wB.postMessage({cmd:'pause'});reset7();};
+function drawJ(){const cv=$('cLoopJ');const {ctx,W,H}=FV.prep(cv);const M={l:40,r:10,t:10,b:22},pw=W-M.l-M.r,ph=H-M.t-M.b;const X=i=>M.l+i/MAXIT*pw,Y=v=>M.t+(1-v)*ph;
+  ctx.font=`11px ${C.mono}`;ctx.fillStyle=C.muted;ctx.strokeStyle=C.grid;ctx.lineWidth=1;[0,0.5,1].forEach(v=>{ctx.beginPath();ctx.moveTo(M.l,Y(v));ctx.lineTo(M.l+pw,Y(v));ctx.stroke();ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText((v*100)+'%',M.l-6,Y(v));});
+  ctx.textAlign='center';ctx.textBaseline='top';ctx.fillText('iteration',M.l+pw/2,M.t+ph+6);
+  ctx.strokeStyle=C.accent;ctx.lineWidth=2;ctx.beginPath();hist.forEach(([i,v],q)=>q?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(i),Y(v)));ctx.stroke();}
+
+// ---------- render loop: only draw what is on screen ----------
+const vis=new Set();const io=new IntersectionObserver(es=>es.forEach(e=>e.isIntersecting?vis.add(e.target.id):vis.delete(e.target.id)),{rootMargin:'200px'});
+['s1','s2','s3','s4','s5','s7'].forEach(id=>io.observe($(id)));
+let ph=0,lt=0;
+function frame(t){const dt=lt?Math.min(0.05,(t-lt)/1000):0;lt=t;ph+=dt*2*Math.PI*0.5;
+  if(S){const H=maxH();
+    if(vis.has('s1')){const m=FV.field($('c1'),stLike(null),C,0,'field',H,true);FV.outline(m,{objs:OBJS},C);region(m);lines(m);}
+    if(vis.has('s2')){const m=FV.field($('c2'),stLike(S.f),C,ph,'field',H,false);region(m);lines(m);}
+    if(vis.has('s3')){const m=FV.field($('c3'),stLike(S.f),C,ph,'int',H,false);map.c3=m;region(m);lines(m);drawTaps(m,false);}
+    if(vis.has('s4')&&S.adj){const m=FV.field($('c4'),stLike(v4==='adj'?S.adj:S.f),C,ph,'field',H,false);region(m);lines(m);}
+    if(vis.has('s5')&&S.adj&&S.sens){const p0=0.6;const a=snapshot(S.f,p0),b=snapshot(S.adj,p0);
+      const small=Math.min(240,H);scalar($('c5a'),a,regMax(a),small);scalar($('c5b'),b,regMax(b),small);
+      const m=scalar($('c5'),S.sens,regMax(S.sens),H);region(m,C.fg);lines(m);drawTaps(m,true);}
+    if(vis.has('s7')&&L&&L.adj){const sm=Math.min(300,H*0.6);
+      const st=f=>({NXi:L.NXi,NYi:L.NYi,dx:L.dx,n:L.n,f});
+      FV.field($('c7a'),st(L.f),C,ph,'field',sm,false);FV.field($('c7b'),st(L.adj),C,ph,'field',sm,false);
+      const r=L.reg;if(r&&r.grad){const g=r.grad;scalar($('c7c'),g,absMax(g),sm,r.nx,r.ny,0,0,r.x);}
+      if(r){const d=new Float32Array(r.x.length);for(let k=0;k<d.length;k++)d[k]=r.x[k];drawDesign($('c7d'),d,r.nx,r.ny,sm);}}}
+  requestAnimationFrame(frame);}
+function drawDesign(cv,x,nx,ny,mh){const r=cv.parentElement.getBoundingClientRect();const H=Math.min(mh,r.width*ny/nx);cv.style.height=H+'px';const {ctx,W}=FV.prep(cv);
+  const s=Math.min(W/nx,H/ny),ox=(W-nx*s)/2,oy=(H-ny*s)/2;off.width=nx;off.height=ny;const im=oc.createImageData(nx,ny);
+  for(let k=0;k<nx*ny;k++){const c=FV.mix(C.lo,C.hi,x[k]);im.data[4*k]=c[0];im.data[4*k+1]=c[1];im.data[4*k+2]=c[2];im.data[4*k+3]=255;}
+  oc.putImageData(im,0,0);ctx.imageSmoothingEnabled=false;ctx.drawImage(off,ox,oy,nx*s,ny*s);ctx.strokeStyle=C.line;ctx.strokeRect(ox,oy,nx*s,ny*s);}
+requestAnimationFrame(frame);
+window.addEventListener('resize',drawJ);
+const mq=matchMedia('(prefers-color-scheme: dark)');mq.addEventListener&&mq.addEventListener('change',()=>{C=FV.colors();drawJ();});
+})();
+</script>
