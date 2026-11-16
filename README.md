@@ -4,7 +4,7 @@
 
 **Learn integrated photonics hands-on.** Every page is a live simulation that runs entirely in your browser, on any device, with nothing to install.
 
-**▶ Open the playground: https://YOUR-ORG.github.io/photonics-playground/**
+**▶ Open the playground: https://photonics-playground.github.io/photonics-playground/**
 
 ## What's inside
 
@@ -20,36 +20,12 @@ Under the hood
 - a 2D frequency-domain finite-difference (FDFD) wave solver with absorbing boundaries and mode sources and monitors
 - adjoint gradients with an Adam optimizer, density filtering and projection for inverse design
 
-All computation happens locally in the browser (JavaScript and Web Workers). There is no server and no account. Anonymous, cookieless visitor statistics are collected with GoatCounter (set `goatcounter` to `''` in `build.py` to disable).
+All computation happens locally in the browser (JavaScript and Web Workers). There is no server and no account.
 
 ## Run it locally
 
-Open `docs/index.html` in a browser, or serve the folder:
+Open `docs/index.html` in a browser.
 
-```bash
-python3 -m http.server --directory docs
-```
-
-## Build
-
-The website in `docs/` is generated from `src/`:
-
-```bash
-python3 build.py
-```
-
-Before publishing, fill in the `CONFIG` block at the top of `build.py` (name, place and contact for the legal notice, GitHub organization), then rebuild.
-
-```
-build.py            build script (edit CONFIG here)
-src/pages/          the tool pages
-src/hub-index.html  landing page
-src/teach.css       shared styles
-src/fonts/          self-hosted fonts (woff2) and fonts.css
-src/brand/          logo, banner
-src/thumbs/         thumbnails for the landing page
-docs/               the generated website, served by GitHub Pages
-```
 
 ## License
 
