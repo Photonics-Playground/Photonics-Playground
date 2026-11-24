@@ -604,8 +604,10 @@ function fiberBand(m,z0,w0,theta){const {ctx,X,Y}=m;ctx.save();ctx.beginPath();c
   for(let i=0;i<N;i++){const za=(i/N)*14,zb=((i+1)/N)*14,a=Math.exp(-2*(((za+zb)/2-z0)/w0)**2);ctx.fillStyle=C.ray;ctx.globalAlpha=0.5*a;ctx.fillRect(X(za),y0,X(zb)-X(za)+0.5,y1-y0);}
   ctx.globalAlpha=1;ctx.fillStyle=C.fg;ctx.font=`11px ${C.mono}`;ctx.textAlign='center';ctx.textBaseline='top';ctx.fillText('fiber beam, '+theta+'° (shaded: where it hits)',X(Math.min(8,Math.max(3.5,z0))),y1+2);ctx.restore();}
 function drawFiber(m){fiberBand(m,Z0,5.2,angle);}
-function drawBar(){const {ctx,W,H}=FV.prep($('cBar'));if(!st)return;const dx=st.dx,nx=st.NXi;const row=Math.floor((1.0+0.025)/dx),row2=Math.floor((1.0+0.075)/dx);
-  const z0=2.0,z1=12.0,sx=W/(z1-z0);ctx.fillStyle=C.clad;ctx.fillRect(0,0,W,H);
+function drawBar(){const {ctx,W,H}=FV.prep($('cBar'));if(!st)return;const dx=st.dx,nx=st.NXi;
+  // read the etched layer of the actual stack (it was hard-wired to an older, larger layout and so always showed cladding)
+  const gs=GEO.gcStack(Object.assign({},GC)),row=Math.floor((gs.yc+0.25*gs.etch)/dx),row2=Math.floor((gs.yc+0.75*gs.etch)/dx);
+  const z0=gs.zg,z1=gs.zg+gs.Lg,sx=W/(z1-z0);ctx.fillStyle=C.clad;ctx.fillRect(0,0,W,H);
   for(let i=Math.floor(z0/dx);i<Math.ceil(z1/dx);i++){const n=(st.n[row*nx+i]+st.n[row2*nx+i])/2;const f=Math.max(0,Math.min(1,(n-1.44)/(3.48-1.44)));const x=((i*dx)-z0)*sx;
     ctx.fillStyle=`rgb(${FV.mix(C.lo,C.hi,f).map(Math.round).join(',')})`;ctx.fillRect(x,H*0.15,dx*sx+0.6,H*0.4);}
   ctx.fillStyle=`rgb(${C.hi.map(Math.round).join(',')})`;ctx.fillRect(0,H*0.55,W,H*0.25);
