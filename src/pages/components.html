@@ -201,7 +201,7 @@ function compile(sc){
   // absorber
   const epsI=new Float64Array(N);
   for(let y=0;y<NY;y++)for(let x=0;x<NX;x++){const d=Math.max(A-x,x-(NX-1-A),A-y,y-(NY-1-A),0)/A;epsI[idx(x,y)]=6*d*d;}
-  if(!Mre||Mre.length!==N*LDA){Mre=new Float64Array(N*LDA);Mim=new Float64Array(N*LDA);}
+  
   // forget params of deleted regions
   // design parameters persist by region id, so comparison scenes without a design region leave an optimized design intact
   return {dx,NXi,NYi,NX,NY,N,BW,LDA,idx,epsBg,base,regs,sources,dets,terms,epsI,errors,opt:sc.opt||{}};
@@ -218,19 +218,75 @@ function buildEps(){const {NXi,NYi,NX,NY,idx,base,regs,epsBg}=S;const ei=Float64
   for(let x=0;x<NX;x++)for(let y=0;y<NY;y++){const ix=Math.min(NXi-1,Math.max(0,x-A)),iy=Math.min(NYi-1,Math.max(0,y-A));e[idx(x,y)]=ei[iy*NXi+ix];}
   return {ei,e};}
 
-// ---------- banded LU ----------
-function factor(e,q){const {NX,NY,N,BW,LDA,idx,epsI}=S;Mre.fill(0);Mim.fill(0);
-  for(let x=0;x<NX;x++)for(let y=0;y<NY;y++){const i=idx(x,y),b=i*LDA+BW;Mre[b]=-4+q*e[i];Mim[b]=q*epsI[i];
-    if(x>0)Mre[b+idx(x-1,y)-i]=1;if(x<NX-1)Mre[b+idx(x+1,y)-i]=1;if(y>0)Mre[b+idx(x,y-1)-i]=1;if(y<NY-1)Mre[b+idx(x,y+1)-i]=1;}
-  for(let k=0;k<N;k++){const bk=k*LDA+BW,pr=Mre[bk],pi=Mim[bk],pd=pr*pr+pi*pi,ir=pr/pd,ii=-pi/pd;
-    const iend=Math.min(N-1,k+BW),rowK=k*LDA+BW-k;
-    for(let i=k+1;i<=iend;i++){const rowI=i*LDA+BW-i,bi=rowI+k;const ar=Mre[bi],ai=Mim[bi];if(ar===0&&ai===0)continue;
-      const lr=ar*ir-ai*ii,li=ar*ii+ai*ir;Mre[bi]=lr;Mim[bi]=li;
-      for(let j=k+1;j<=iend;j++){const ur=Mre[rowK+j],ui=Mim[rowK+j];if(ur===0&&ui===0)continue;Mre[rowI+j]-=lr*ur-li*ui;Mim[rowI+j]-=lr*ui+li*ur;}}}}
-function solve(br,bi){const {N,BW,LDA}=S;
-  for(let i=0;i<N;i++){const j0=Math.max(0,i-BW),row=i*LDA+BW-i;let sr=br[i],si=bi[i];for(let j=j0;j<i;j++){const lr=Mre[row+j],li=Mim[row+j];if(lr===0&&li===0)continue;sr-=lr*br[j]-li*bi[j];si-=lr*bi[j]+li*br[j];}br[i]=sr;bi[i]=si;}
-  for(let i=N-1;i>=0;i--){const j1=Math.min(N-1,i+BW),row=i*LDA+BW-i;let sr=br[i],si=bi[i];for(let j=i+1;j<=j1;j++){const ur=Mre[row+j],ui=Mim[row+j];if(ur===0&&ui===0)continue;sr-=ur*br[j]-ui*bi[j];si-=ur*bi[j]+ui*br[j];}
-    const dr=Mre[row+i],di=Mim[row+i],dd=dr*dr+di*di;br[i]=(sr*dr+si*di)/dd;bi[i]=(si*dr-sr*di)/dd;}}
+// ---------- direct solver (nested dissection) ----------
+// The grid is split recursively into rectangles. Inside each piece the cells that do not touch a neighbouring piece are
+// eliminated with small dense LU factorizations; only the cells along the cuts are kept and passed up. Much less work than
+// one wide band, and every right-hand side is solved exactly as before.
+let NDT=null,LEAF=64;
+// multifrontal nested dissection: each node owns a separator line (or, for a leaf, all its cells) and eliminates it;
+// what remains is a dense block on the cells just outside the node, which the parent adds into its own front.
+function ndTree(NX,NY,idx){const nodes=[],pos=new Int32Array(NX*NY).fill(-1);let maxN=0;
+  function build(x0,x1,y0,y1){const w=x1-x0,h=y1-y0,node={},Exy=[];
+    if(w*h<=LEAF||w<3&&h<3){node.leaf=true;for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++)Exy.push([x,y]);}
+    else if(w>=h){const xm=x0+(w>>1);node.kids=[build(x0,xm,y0,y1),build(xm+1,x1,y0,y1)];for(let y=y0;y<y1;y++)Exy.push([xm,y]);}
+    else{const ym=y0+(h>>1);node.kids=[build(x0,x1,y0,ym),build(x0,x1,ym+1,y1)];for(let x=x0;x<x1;x++)Exy.push([x,ym]);}
+    const Kxy=[];if(x0>0)for(let y=y0;y<y1;y++)Kxy.push([x0-1,y]);if(x1<NX)for(let y=y0;y<y1;y++)Kxy.push([x1,y]);
+    if(y0>0)for(let x=x0;x<x1;x++)Kxy.push([x,y0-1]);if(y1<NY)for(let x=x0;x<x1;x++)Kxy.push([x,y1]);
+    node.E=Exy.map(([x,y])=>idx(x,y));node.K=Kxy.map(([x,y])=>idx(x,y));node.U=node.E.concat(node.K);
+    node.U.forEach((c,k)=>pos[c]=k);const ne=node.E.length,nk=node.K.length,n=ne+nk;node.pairs=[];if(n>maxN)maxN=n;
+    Exy.forEach(([x,y],k)=>{for(const[dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=NX||yy>=NY)continue;
+      const p=pos[idx(xx,yy)];if(p>k)node.pairs.push([k,p]);}});
+    if(node.kids)for(const kid of node.kids)kid.map=Int32Array.from(kid.K,c=>pos[c]);
+    for(const c of node.U)pos[c]=-1;
+    node.piv=new Int32Array(ne);
+    node.Lr=new Float64Array(ne*ne);node.Li=new Float64Array(ne*ne);node.Gr=new Float64Array(ne*nk);node.Gi=new Float64Array(ne*nk);
+    node.Sr=new Float64Array(nk*nk);node.Si=new Float64Array(nk*nk);node.zr=new Float64Array(ne);node.zi=new Float64Array(ne);
+    nodes.push(node);return node;}
+  const root=build(0,NX,0,NY);return {NX,NY,root,nodes,Mr:new Float64Array(maxN*maxN),Mi:new Float64Array(maxN*maxN)};}
+function ndLU(n,Ar,Ai,piv){for(let k=0;k<n;k++){let p=k,mx=-1;for(let i=k;i<n;i++){const v=Ar[i*n+k]*Ar[i*n+k]+Ai[i*n+k]*Ai[i*n+k];if(v>mx){mx=v;p=i;}}piv[k]=p;
+    if(p!==k){const rk=k*n,rp=p*n;for(let j=0;j<n;j++){let t=Ar[rk+j];Ar[rk+j]=Ar[rp+j];Ar[rp+j]=t;t=Ai[rk+j];Ai[rk+j]=Ai[rp+j];Ai[rp+j]=t;}}
+    const rk=k*n,pr=Ar[rk+k],pi=Ai[rk+k],pd=pr*pr+pi*pi,ir=pr/pd,ii=-pi/pd;
+    for(let i=k+1;i<n;i++){const ri=i*n,ar=Ar[ri+k],ai=Ai[ri+k];if(ar===0&&ai===0)continue;const lr=ar*ir-ai*ii,li=ar*ii+ai*ir;Ar[ri+k]=lr;Ai[ri+k]=li;
+      for(let j=k+1;j<n;j++){const ur=Ar[rk+j],ui=Ai[rk+j];Ar[ri+j]-=lr*ur-li*ui;Ai[ri+j]-=lr*ui+li*ur;}}}}
+// solve L U x = P b for m right-hand sides stored row-wise in X (n x m)
+function ndLUsolve(n,Ar,Ai,piv,Xr,Xi,m){
+  for(let k=0;k<n;k++){const p=piv[k];if(p!==k){const rk=k*m,rp=p*m;for(let j=0;j<m;j++){let t=Xr[rk+j];Xr[rk+j]=Xr[rp+j];Xr[rp+j]=t;t=Xi[rk+j];Xi[rk+j]=Xi[rp+j];Xi[rp+j]=t;}}}
+  for(let i=1;i<n;i++){const ri=i*m;for(let k=0;k<i;k++){const lr=Ar[i*n+k],li=Ai[i*n+k];if(lr===0&&li===0)continue;const rk=k*m;
+      for(let j=0;j<m;j++){const xr=Xr[rk+j],xi=Xi[rk+j];Xr[ri+j]-=lr*xr-li*xi;Xi[ri+j]-=lr*xi+li*xr;}}}
+  for(let i=n-1;i>=0;i--){const ri=i*m;for(let k=i+1;k<n;k++){const ur=Ar[i*n+k],ui=Ai[i*n+k];if(ur===0&&ui===0)continue;const rk=k*m;
+      for(let j=0;j<m;j++){const xr=Xr[rk+j],xi=Xi[rk+j];Xr[ri+j]-=ur*xr-ui*xi;Xi[ri+j]-=ur*xi+ui*xr;}}
+    const dr=Ar[i*n+i],di=Ai[i*n+i],dd=dr*dr+di*di,cr=dr/dd,ci=-di/dd;for(let j=0;j<m;j++){const xr=Xr[ri+j],xi=Xi[ri+j];Xr[ri+j]=xr*cr-xi*ci;Xi[ri+j]=xr*ci+xi*cr;}}}
+function ndFactorNode(node,diagR,diagI){if(node.kids)for(const kid of node.kids)ndFactorNode(kid,diagR,diagI);
+  const ne=node.E.length,nk=node.K.length,n=ne+nk,Mr=NDT.Mr,Mi=NDT.Mi;Mr.fill(0,0,n*n);Mi.fill(0,0,n*n);
+  for(let k=0;k<ne;k++){const c=node.E[k];Mr[k*n+k]=diagR[c];Mi[k*n+k]=diagI[c];}
+  for(const[a,b] of node.pairs){Mr[a*n+b]+=1;Mr[b*n+a]+=1;}
+  if(node.kids)for(const kid of node.kids){const m=kid.K.length,mp=kid.map,Sr=kid.Sr,Si=kid.Si;   // extend-add
+    for(let a=0;a<m;a++){const ra=mp[a]*n,sa=a*m;for(let b=0;b<m;b++){Mr[ra+mp[b]]+=Sr[sa+b];Mi[ra+mp[b]]+=Si[sa+b];}}}
+  const Lr=node.Lr,Li=node.Li,Gr=node.Gr,Gi=node.Gi,Sr=node.Sr,Si=node.Si;
+  for(let a=0;a<ne;a++){const r=a*n;for(let b=0;b<ne;b++){Lr[a*ne+b]=Mr[r+b];Li[a*ne+b]=Mi[r+b];}for(let b=0;b<nk;b++){Gr[a*nk+b]=Mr[r+ne+b];Gi[a*nk+b]=Mi[r+ne+b];}}
+  for(let a=0;a<nk;a++){const r=(ne+a)*n+ne;for(let b=0;b<nk;b++){Sr[a*nk+b]=Mr[r+b];Si[a*nk+b]=Mi[r+b];}}
+  ndLU(ne,Lr,Li,node.piv);if(!nk)return;
+  const Br=Float64Array.from(Gr),Bi=Float64Array.from(Gi);   // M_EK, needed for S = M_KK - M_KE M_EE^-1 M_EK
+  ndLUsolve(ne,Lr,Li,node.piv,Gr,Gi,nk);
+  for(let e=0;e<ne;e++){const ge=e*nk;for(let a=0;a<nk;a++){const br=Br[ge+a],bi=Bi[ge+a];if(br===0&&bi===0)continue;const ra=a*nk;
+      for(let b=0;b<nk;b++){const gr=Gr[ge+b],gi=Gi[ge+b];Sr[ra+b]-=br*gr-bi*gi;Si[ra+b]-=br*gi+bi*gr;}}}}
+// forward: children first; each node reduces the right-hand side onto the cells just outside it (b_K -= G^T b_E)
+function ndFwd(node,br,bi){if(node.kids)for(const kid of node.kids)ndFwd(kid,br,bi);
+  const E=node.E,K=node.K,ne=E.length,nk=K.length,zr=node.zr,zi=node.zi,Gr=node.Gr,Gi=node.Gi;
+  for(let a=0;a<ne;a++){zr[a]=br[E[a]];zi[a]=bi[E[a]];}
+  for(let e=0;e<ne;e++){const xr=zr[e],xi=zi[e];if(xr===0&&xi===0)continue;const ge=e*nk;
+    for(let a=0;a<nk;a++){const gr=Gr[ge+a],gi=Gi[ge+a],c=K[a];br[c]-=gr*xr-gi*xi;bi[c]-=gr*xi+gi*xr;}}
+  ndLUsolve(ne,node.Lr,node.Li,node.piv,zr,zi,1);}
+// backward: root first; x_E = M_EE^-1 b_E - G x_K
+function ndBwd(node,xr,xi){const E=node.E,K=node.K,ne=E.length,nk=K.length,zr=node.zr,zi=node.zi,Gr=node.Gr,Gi=node.Gi;
+  for(let e=0;e<ne;e++){let sr=zr[e],si=zi[e];const ge=e*nk;for(let a=0;a<nk;a++){const gr=Gr[ge+a],gi=Gi[ge+a],vr=xr[K[a]],vi=xi[K[a]];sr-=gr*vr-gi*vi;si-=gr*vi+gi*vr;}xr[E[e]]=sr;xi[E[e]]=si;}
+  if(node.kids)for(const kid of node.kids)ndBwd(kid,xr,xi);}
+let ndDR=null,ndDI=null;
+function factor(e,q){const {NX,NY,N,idx,epsI}=S;
+  if(!NDT||NDT.NX!==NX||NDT.NY!==NY||NDT.key!==NX+","+NY+","+idx(1,0)){NDT=ndTree(NX,NY,idx);NDT.key=NX+","+NY+","+idx(1,0);ndDR=new Float64Array(N);ndDI=new Float64Array(N);}
+  for(let i=0;i<N;i++){ndDR[i]=-4+q*e[i];ndDI[i]=q*epsI[i];}
+  ndFactorNode(NDT.root,ndDR,ndDI);}
+function solve(br,bi){ndFwd(NDT.root,br,bi);ndBwd(NDT.root,br,bi);}
 
 // ---------- line modes (discrete transverse eigenproblem) ----------
 function tqli(d,e,n,z){for(let i=1;i<n;i++)e[i-1]=e[i];e[n-1]=0;
@@ -332,8 +388,57 @@ function post(){if(!last)return;const {NXi,NYi}=S;const n=new Float32Array(NXi*N
   self.postMessage({type:'state',it,J:last.J,ms:lastMs,readings:last.readings,errs:last.errs,NXi,NYi,dx:S.dx,n,f,running,beta,
     srcIds:S.sources.map(s=>s.id),detIds:S.dets.map(d=>d.id),N:S.N});}
 function loop(){if(!running)return;step();post();setTimeout(loop,0);}
+// ---------- time domain (FDTD) for spectra ----------
+let fdtdId=null;
+// the update loops are also compiled to a 2 KB WebAssembly module (with SIMD); plain JavaScript is the fallback
+const FDTD_WASM='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';
+let fdtdMod=null;try{fdtdMod=new WebAssembly.Module(Uint8Array.from(atob(FDTD_WASM),c=>c.charCodeAt(0)));}catch(err){fdtdMod=null;self.postMessage({type:'log',msg:'wasm: '+err});}
+function fdtdStepper(N,dX,dY,arr,sIdx,sAmp,g,mIdx,mPhi,edge,CH){
+  if(fdtdMod)try{const fl=8*N+g.length+sAmp.length+mPhi.length+CH,it=sIdx.length+mIdx.length+edge.length,bytes=4*(fl+it)+65536*3;
+    const mem=new WebAssembly.Memory({initial:Math.ceil(bytes/65536)+4}),ins=new WebAssembly.Instance(fdtdMod,{env:{memory:mem}}),X=ins.exports;
+    let off=(X.__heap_base.value+15)&~15;const F=n=>{const v=new Float32Array(mem.buffer,off,n);off+=4*n;off=(off+15)&~15;return v;},I=n=>{const v=new Int32Array(mem.buffer,off,n);off+=4*n;off=(off+15)&~15;return v;};
+    const v={Ez:F(N),Hx:F(N),Hy:F(N),Ca:F(N),Cb:F(N),Da:F(N),Db:F(N),eps:F(N),g:F(g.length),sA:F(sAmp.length),mP:F(mPhi.length),out:F(CH),sI:I(sIdx.length),mI:I(mIdx.length),ed:I(edge.length)};
+    ['Ca','Cb','Da','Db','eps'].forEach(k=>v[k].set(arr[k]));v.g.set(g);v.sA.set(sAmp);v.mP.set(mPhi);v.sI.set(sIdx);v.mI.set(mIdx);v.ed.set(edge);
+    const P=a=>a.byteOffset;
+    return {wasm:true,step:(n0,ns)=>{X.run(P(v.Ez),P(v.Hx),P(v.Hy),P(v.Ca),P(v.Cb),P(v.Da),P(v.Db),N,dX,dY,n0,ns,P(v.sI),P(v.sA),sIdx.length,P(v.g),g.length,P(v.mI),P(v.mP),mIdx.length,P(v.out),P(v.ed),edge.length);return v.out;},
+      energy:()=>X.energy(P(v.Ez),P(v.Hx),P(v.Hy),P(v.eps),N)};}catch(err){self.postMessage({type:'log',msg:String(err)});}
+  const Ez=new Float32Array(N),Hx=new Float32Array(N),Hy=new Float32Array(N),{Ca,Cb,Da,Db,eps}=arr,out=new Float32Array(CH),m=Math.max(dX,dY);
+  return {wasm:false,step:(n0,ns)=>{for(let s=0;s<ns;s++){
+      for(let i=0,L=N-dY;i<L;i++){const v=Da[i]*Hx[i]-Db[i]*(Ez[i+dY]-Ez[i]);Hx[i]=v<1e-30&&v>-1e-30?0:v;}
+      for(let i=0,L=N-dX;i<L;i++){const v=Da[i]*Hy[i]+Db[i]*(Ez[i+dX]-Ez[i]);Hy[i]=v<1e-30&&v>-1e-30?0:v;}
+      for(let i=m,L=N-m;i<L;i++){const v=Ca[i]*Ez[i]+Cb[i]*((Hy[i]-Hy[i-dX])-(Hx[i]-Hx[i-dY]));Ez[i]=v<1e-30&&v>-1e-30?0:v;}
+      for(let k=0;k<edge.length;k++)Ez[edge[k]]=0;
+      const n=n0+s;if(n<g.length){const gv=g[n];for(let k=0;k<sIdx.length;k++)Ez[sIdx[k]]+=sAmp[k]*gv;}
+      let sv=0;for(let k=0;k<mIdx.length;k++)sv+=mPhi[k]*Ez[mIdx[k]];out[s]=sv;}return out;},
+    energy:()=>{let en=0;for(let i=0;i<N;i++)en+=eps[i]*Ez[i]*Ez[i]+Hx[i]*Hx[i]+Hy[i]*Hy[i];return en;}};}
+// One short pulse holds every wavelength at once, so a single run gives the whole spectrum. Same grid and permittivity as
+// the frequency-domain solver. The Yee leapfrog only changes how time is discretized: a run at frequency w behaves exactly
+// like the frequency-domain solver at W = (2/dt) sin(w dt/2), so the spectrum is read out at the matching w and the
+// resonances land on the same wavelengths as in the single-wavelength view.
+function fdtdRun(id,sc,lam0,lam1,onDone,onProg,tag){S=compile(sc);const {NX,NY,N,idx,dx,epsI,sources,dets}=S;const {e}=buildEps();
+  const dX=idx(1,0)-idx(0,0),dY=idx(0,1)-idx(0,0),dt=0.99*dx/Math.SQRT2,wOf=l=>2/dt*Math.asin(Math.PI*dt/l);
+  const w0=wOf(lam1),w1=wOf(lam0),wc=(w0+w1)/2,tau=2.2/((w1-w0)/2),t0=3.5*tau;
+  const src=sources[0],det=dets.find(d=>d.id==='THRU')||dets[0],lc=2/(1/lam0+1/lam1),q=Math.pow(2*Math.PI/lc*dx,2);
+  const ms=lineMode(src,e,q,0,false),md=lineMode(det,e,q,0,false);
+  const sIdx=src.cells.map(t=>epsAt(e,src,t,0)),mIdx=Int32Array.from(det.cells.map(t=>epsAt(e,det,t,0)));
+  const arr={Ca:new Float32Array(N),Cb:new Float32Array(N),Da:new Float32Array(N),Db:new Float32Array(N),eps:Float32Array.from(e)};
+  for(let i=0;i<N;i++){const se=wc*epsI[i],a=se*dt/(2*e[i]);arr.Ca[i]=(1-a)/(1+a);arr.Cb[i]=dt/e[i]/(1+a)/dx;const sm=se/e[i],b=sm*dt/2;arr.Da[i]=(1-b)/(1+b);arr.Db[i]=dt/(1+b)/dx;}
+  const nG=Math.ceil(2*t0/dt),g=new Float32Array(nG);for(let n=0;n<nG;n++){const t=(n+1)*dt;g[n]=Math.exp(-(((t-t0)/tau)**2))*Math.sin(wc*(t-t0));}
+  const sAmp=Float32Array.from(sIdx,(i,k)=>arr.Cb[i]*dx*ms.phi[k]);
+  const edge=[];for(let x=0;x<NX;x++)edge.push(idx(x,0),idx(x,NY-1));for(let y=0;y<NY;y++)edge.push(idx(0,y),idx(NX-1,y));
+  const CH=4000,M=16,maxSteps=600000,st=fdtdStepper(N,dX,dY,arr,Int32Array.from(sIdx),sAmp,g,mIdx,Float32Array.from(md.phi),Int32Array.from(edge),CH);
+  const rec=[];let blkR=0,blkI=0,n=0,peak=0,quiet=0,fin=false;const tStart=Date.now();
+  const chunk=()=>{if(fdtdId!==id)return;
+    const out=st.step(n,CH);
+    let mx=0;for(let s=0;s<CH;s++){const t=(n+s+1)*dt,ph=wc*t,sv=out[s];if(Math.abs(sv)>mx)mx=Math.abs(sv);blkR+=sv*Math.cos(ph);blkI+=sv*Math.sin(ph);if((n+s+1)%M===0){rec.push(blkR,blkI);blkR=0;blkI=0;}}
+    n+=CH;if(mx>peak)peak=mx;quiet=(n*dt>2*t0&&mx<2e-5*peak)?quiet+1:0;if(quiet>=2||n>=maxSteps)fin=true;
+    onProg(n,tag);if(!fin){setTimeout(chunk,0);return;}
+    // spectrum: demodulated, block-summed record -> DFT at the frequencies that match the requested wavelengths
+    const nb=rec.length/2,R=Float64Array.from(rec);onDone(l=>{const d=wOf(l)-wc,st=d*M*dt,rc=Math.cos(st),rs=Math.sin(st);let c=Math.cos(st/2),s=Math.sin(st/2),sr=0,si=0;
+      for(let m=0;m<nb;m++){const ar=R[2*m],ai=R[2*m+1];sr+=ar*c-ai*s;si+=ar*s+ai*c;const cn=c*rc-s*rs;s=c*rs+s*rc;c=cn;}return sr*sr+si*si;},n,(Date.now()-tStart),st.wasm);};
+  chunk();}
 self.onmessage=ev=>{const m=ev.data;
-  if(m.cmd==='scene'){batchId=null;S=compile(m.scene);S.terms_raw=m.scene.terms;if(!m.keep)softRestart();if(!running){evaluate(false);post();}}
+  if(m.cmd==='scene'){batchId=null;fdtdId=null;S=compile(m.scene);S.terms_raw=m.scene.terms;if(!m.keep)softRestart();if(!running){evaluate(false);post();}}
   else if(m.cmd==='run'){if(!running&&S){running=true;loop();}}
   else if(m.cmd==='pause'){running=false;if(S)post();}
   else if(m.cmd==='step'){running=false;step();evaluate(false);post();}
@@ -342,7 +447,11 @@ self.onmessage=ev=>{const m=ev.data;
   else if(m.cmd==='view'){view=m.v;post();}
   else if(m.cmd==='batch'){const id=m.id;let i=0;batchId=id;const nxt=()=>{if(batchId!==id||i>=m.scenes.length){if(batchId===id)self.postMessage({type:'batchdone',id});return;}
       S=compile(m.scenes[i]);const r=evaluate(false);self.postMessage({type:'batch',id,i,readings:r.readings,errs:r.errs});i++;setTimeout(nxt,0);};nxt();}
-  else if(m.cmd==='stopbatch'){batchId=null;}
+  else if(m.cmd==='stopbatch'){batchId=null;fdtdId=null;}
+  else if(m.cmd==='fdtd'){const id=m.id;fdtdId=id;batchId=null;const NL=m.n||2001,lams=[];for(let k=0;k<NL;k++)lams.push(m.lam0+(m.lam1-m.lam0)*k/(NL-1));
+    const prog=(n,tag)=>self.postMessage({type:'fdtdprog',id,n,tag});
+    fdtdRun(id,m.ref,m.lam0,m.lam1,(Sref,nr,msr,W)=>{const P0=lams.map(Sref);
+      fdtdRun(id,m.scene,m.lam0,m.lam1,(Sdev,nd,msd)=>{const T=lams.map((l,k)=>Sdev(l)/P0[k]);self.postMessage({type:'fdtddone',id,lams,T,steps:nd,ms:msr+msd,wasm:W});},prog,'device');},prog,'reference');}
 };
 
 </script>
@@ -523,10 +632,11 @@ const COMPS={
   html:`<h2>Ring resonator</h2><p>A small loop sits next to a straight bus waveguide. A little light crosses into the ring and circulates. When a whole number of wavelengths fits exactly around the loop, each round trip adds up in step: the ring is on <b>resonance</b>, light builds up inside, and almost nothing continues along the bus.</p>
    <p>Off resonance, the light passes by unaffected. The result is a comb of narrow dips in the spectrum, spaced by the ${term('free spectral range','FSR: the wavelength spacing between neighbouring resonances.')}. The gap sets how strongly ring and bus talk to each other. The deepest dip happens at ${term('critical coupling','When the light coupled into the ring equals what the ring loses per round trip: transmission drops to zero.')}.</p>
    <div class="eq">resonance: m · λ = n_eff · 2πR     FSR ≈ λ² / (n_g · 2πR)</div>
-   <div class="rule"><b>Try it.</b> The page opens exactly on a resonance, at 1483.15 nm. Measure the spectrum: you will find a second dip about one FSR away, shallower because the coupling changes with wavelength. Tap a dip in the chart to watch the light pile up in the ring.</div>`,
+   <div class="rule"><b>Try it.</b> The page opens exactly on a resonance, at 1483.15 nm. Measure the spectrum: you will find a second dip about one FSR away, shallower because the coupling changes with wavelength. Tap a dip in the chart to watch the light pile up in the ring.</div>
+   <p class="note">For the spectrum, the page does not solve one wavelength after another. It sends a single short light pulse through the device in a time-domain (FDTD) simulation. The pulse contains all wavelengths at once, so one run gives the whole spectrum, with every dip fully resolved. It uses the same grid as the view above, and the dips land on the same wavelengths.</p>`,
   params:[['R','Ring radius',1.2,3,0.1,1.8,'µm'],['gap','Gap',0.08,0.35,0.01,0.15,'nm'],['lam','Wavelength',1.47,1.57,0.00005,1.48315,'nmλ']],
   scene:p=>GEO.ring({R:p.R,gap:p.gap,lam:p.lam}),ports:[['Through port',0]],
-  sweep:{title:'Spectrum at the through port',param:'lam',vals:()=>{const a=[];for(let k=0;k<=80;k++)a.push(+(1.47+0.00125*k).toFixed(5));return a;},x:'wavelength (nm)',spectrum:true},
+  sweep:{title:'Spectrum at the through port',param:'lam',vals:()=>{const a=[];for(let k=0;k<=80;k++)a.push(+(1.47+0.00125*k).toFixed(5));return a;},x:'wavelength (nm)',spectrum:true,fdtd:true},
   quiz:{q:'You make the ring larger. What happens to the spacing between the dips?',opts:['It gets larger','It gets smaller','It stays the same'],ok:1,why:'A longer round trip fits more wavelengths, so neighbouring resonances crowd closer: FSR ≈ λ² / (n_g · 2πR).'}}
 };
 function mmiTheory(Wm){const n=2.85,nc=1.44,lam=1.55;const We=Wm+lam/(Math.PI*Math.sqrt(n*n-nc*nc));const Lpi=4*n*We*We/(3*lam);return 3*Lpi/8;}
@@ -553,16 +663,23 @@ function readsUI(){const c=COMPS[cur];if(!st)return;const r=st.readings[0];let h
   if(cur==='grating'){const p=P.grating,a=braggAngle(p);html+=`<div><span>Bragg estimate of best angle</span><b>${a===null?'none':a.toFixed(1)+'°'}</b></div>`;}
   if(cur==='ring'){const r0=r[0];html+=`<div><span>At this wavelength</span><b>${r0<0.5?'on resonance':'off resonance'}</b></div>`;}
   $('reads').innerHTML=html;}
-w.onmessage=e=>{const m=e.data;
+w.onmessage=e=>{const m=e.data;if(m.type==='log'){console.warn(m.msg);return;}
   if(m.type==='state'){st=m;simScene=pendingScene;$('status').className='status';$('status').textContent=`solved in ${m.ms} ms · ${m.NXi}×${m.NYi} grid`;readsUI();}
   else if(m.type==='batch'&&m.id===sweepId){const s=sweeps[sweepMeta.k];s.pts.push([sweepMeta.vals[m.i],m.readings[0]]);s.pts.sort((a,b)=>a[0]-b[0]);$('status').textContent=`measuring… ${m.i+1}/${sweepMeta.vals.length}${sweepMeta.refine?' (refining dips)':''}`;drawChart();}
+  else if(m.type==='fdtdprog'&&m.id===sweepId){$('status').textContent=`time-domain simulation (${m.tag==='reference'?'reference waveguide':'with ring'}) · ${Math.round(m.n/1000)}k time steps`;}
+  else if(m.type==='fdtddone'&&m.id===sweepId){const k=sweepMeta.k;sweeps[k]={pts:m.lams.map((l,i)=>[l,[Math.min(1.2,m.T[i])]]),done:true};
+    $('status').className='status';$('status').textContent=`spectrum done · one pulse, ${Math.round(m.steps/1000)}k time steps, ${(m.ms/1000).toFixed(1)} s${m.wasm?'':' (no WebAssembly)'}`;$('bSweep').disabled=false;drawChart();}
   else if(m.type==='batchdone'&&m.id===sweepId){const k=sweepMeta.k;
     if(COMPS[k].sweep.spectrum&&!sweepMeta.refine){const pts=sweeps[k].pts;const extra=[];for(let i=1;i<pts.length-1;i++){const v=pts[i][1][0];if(v<0.9&&v<=pts[i-1][1][0]&&v<=pts[i+1][1][0]){for(let d=-0.0015;d<=0.00151;d+=0.00025){const l=+(pts[i][0]+d).toFixed(5);if(Math.abs(d)>1e-9)extra.push(l);}}}
       if(extra.length){startBatch(k,extra,true);return;}}
     $('status').textContent='measurement done';$('bSweep').disabled=false;sweeps[k].done=true;drawChart();run();}};
 function startBatch(k,vals,refine){const c=COMPS[k];sweepId=Date.now()+Math.random();sweepMeta={k,vals,refine};
   const scenes=vals.map(v=>c.scene(Object.assign({},P[k],{[c.sweep.param]:v})));$('bSweep').disabled=true;$('status').className='status busy';w.postMessage({cmd:'batch',id:sweepId,scenes});}
-$('bSweep').onclick=()=>{const c=COMPS[cur];sweeps[cur]={pts:[],done:false};startBatch(cur,c.sweep.vals(P[cur]),false);drawChart();};
+$('bSweep').onclick=()=>{const c=COMPS[cur];sweeps[cur]={pts:[],done:false};
+  if(c.sweep.fdtd){const v=c.sweep.vals(P[cur]),sc=c.scene(P[cur]),ref=Object.assign({},sc,{objs:sc.objs.filter(o=>o.id!=='RING')});
+    sweepId=Date.now()+Math.random();sweepMeta={k:cur};$('bSweep').disabled=true;$('status').className='status busy';$('status').textContent='time-domain simulation…';
+    w.postMessage({cmd:'fdtd',id:sweepId,scene:sc,ref,lam0:v[0],lam1:v[v.length-1]});drawChart();return;}
+  startBatch(cur,c.sweep.vals(P[cur]),false);drawChart();};
 // chart
 let chartMap=null;
 function drawChart(){const {ctx,W,H}=FV.prep($('cChart'));const c=COMPS[cur],s=sweeps[cur];const M={l:48,r:12,t:10,b:30},pw=W-M.l-M.r,ph=H-M.t-M.b;

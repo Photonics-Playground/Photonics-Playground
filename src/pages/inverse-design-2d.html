@@ -242,15 +242,136 @@ function calib(lam,hw,m){const key=lam+'|'+hw+'|'+m;if(calCache[key])return calC
   const [cr,ci]=overlap(br,bi,monitorVec(P(C0,hw,m),lam));
   return calCache[key]={flux:F,kappa:(cr*cr+ci*ci)/F};}
 
+
+// ---- static condensation: only the design region changes, so everything outside it is factorized once per target and wavelength.
+// Each step then factorizes a small system on the design region (interior band + dense boundary block) instead of the whole domain.
+function bandLU(n,bw,R,I){const ld=2*bw+1;
+  for(let k=0;k<n;k++){const rowK=k*ld+bw-k,pr=R[rowK+k],pi=I[rowK+k],pd=pr*pr+pi*pi,ir=pr/pd,ii=-pi/pd,iend=Math.min(n-1,k+bw);
+    for(let i=k+1;i<=iend;i++){const rowI=i*ld+bw-i,bi=rowI+k,ar=R[bi],ai=I[bi];if(ar===0&&ai===0)continue;
+      const lr=ar*ir-ai*ii,li=ar*ii+ai*ir;R[bi]=lr;I[bi]=li;
+      for(let j=k+1;j<=iend;j++){const ur=R[rowK+j],ui=I[rowK+j];R[rowI+j]-=lr*ur-li*ui;I[rowI+j]-=lr*ui+li*ur;}}}}
+function bandSolve(n,bw,R,I,br,bi,s0=0){const ld=2*bw+1;
+  for(let i=s0;i<n;i++){const j0=Math.max(s0,i-bw),row=i*ld+bw-i;let sr=br[i],si=bi[i];
+    for(let j=j0;j<i;j++){const lr=R[row+j],li=I[row+j],xr=br[j],xi=bi[j];sr-=lr*xr-li*xi;si-=lr*xi+li*xr;}br[i]=sr;bi[i]=si;}
+  for(let i=n-1;i>=0;i--){const j1=Math.min(n-1,i+bw),row=i*ld+bw-i;let sr=br[i],si=bi[i];
+    for(let j=i+1;j<=j1;j++){const ur=R[row+j],ui=I[row+j],xr=br[j],xi=bi[j];sr-=ur*xr-ui*xi;si-=ur*xi+ui*xr;}
+    const dr=R[row+i],di=I[row+i],dd=dr*dr+di*di;br[i]=(sr*dr+si*di)/dd;bi[i]=(si*dr-sr*di)/dd;}}
+const BWI=D-2,NI=BWI*BWI,LDI=2*BWI+1,bCells=[];
+(function(){const bid=new Int32Array(D*D).fill(-1);
+  for(let j=0;j<D;j++)for(let i=0;i<D;i++)if(i===0||j===0||i===D-1||j===D-1){bid[j*D+i]=bCells.length;bCells.push({i,j,n:idx(D0+i,D0+j)});}
+  for(const b of bCells){b.ext=[];b.nb=[];b.int=-1;
+    for(const[di,dj] of [[1,0],[-1,0],[0,1],[0,-1]]){const ii=b.i+di,jj=b.j+dj;
+      if(ii<0||jj<0||ii>=D||jj>=D)b.ext.push(idx(D0+ii,D0+jj));else if(bid[jj*D+ii]>=0)b.nb.push(bid[jj*D+ii]);else b.int=(jj-1)*BWI+(ii-1);}}})();
+const NB=bCells.length,EXT0=Math.min(...bCells.flatMap(b=>b.ext));
+const inD=(x,y)=>x>=D0&&x<D0+D&&y>=D0&&y<D0+D;
+let pre={};
+function prepLam(lam){if(pre[lam])return pre[lam];
+  const q=Math.pow(2*Math.PI/lam*DXU,2),R=new Float64Array(N*LDA),I=new Float64Array(N*LDA);
+  for(let y=0;y<NY;y++)for(let x=0;x<NX;x++){const i=idx(x,y),b=i*LDA+BW;
+    if(inD(x,y)){R[b]=1;continue;}
+    R[b]=-4+q*epsBase[i];I[b]=q*epsI[i];
+    if(x>0&&!inD(x-1,y))R[b-1]=1;if(x<NX-1&&!inD(x+1,y))R[b+1]=1;if(y>0&&!inD(x,y-1))R[b-BW]=1;if(y<NY-1&&!inD(x,y+1))R[b+BW]=1;}
+  bandLU(N,BW,R,I);
+  // all rim right-hand sides at once: each row of the factor is read once for all of them (much faster than one solve after another)
+  const m=NB,Xr=new Float64Array(N*m),Xi=new Float64Array(N*m),ld=LDA;
+  bCells.forEach((b,k)=>{for(const e of b.ext)Xr[e*m+k]=1;});
+  for(let i=EXT0;i<N;i++){const row=i*ld+BW-i,oi=i*m;for(let j=Math.max(EXT0,i-BW);j<i;j++){const lr=R[row+j],li=I[row+j];if(lr===0&&li===0)continue;const oj=j*m;
+      for(let r=0;r<m;r++){const xr=Xr[oj+r],xi=Xi[oj+r];Xr[oi+r]-=lr*xr-li*xi;Xi[oi+r]-=lr*xi+li*xr;}}}
+  for(let i=N-1;i>=EXT0;i--){const row=i*ld+BW-i,oi=i*m;for(let j=i+1;j<=Math.min(N-1,i+BW);j++){const ur=R[row+j],ui=I[row+j];if(ur===0&&ui===0)continue;const oj=j*m;
+      for(let r=0;r<m;r++){const xr=Xr[oj+r],xi=Xi[oj+r];Xr[oi+r]-=ur*xr-ui*xi;Xi[oi+r]-=ur*xi+ui*xr;}}
+    const dr=R[row+i],di=I[row+i],dd=dr*dr+di*di,ar=dr/dd,ai=-di/dd;
+    for(let r=0;r<m;r++){const xr=Xr[oi+r],xi=Xi[oi+r];Xr[oi+r]=xr*ar-xi*ai;Xi[oi+r]=xr*ai+xi*ar;}}
+  const Wr=new Float64Array(NB*NB),Wi=new Float64Array(NB*NB);
+  for(let c=0;c<NB;c++)for(const e of bCells[c].ext){const o=e*m;for(let b=0;b<NB;b++){Wr[c*NB+b]+=Xr[o+b];Wi[c*NB+b]+=Xi[o+b];}}
+  return pre[lam]={q,R,I,Wr,Wi,src:{},mon:{}};}
+function toBoundary(vr,vi){const rr=new Float64Array(NB),ri=new Float64Array(NB);
+  bCells.forEach((b,k)=>{for(const e of b.ext){rr[k]-=vr[e];ri[k]-=vi[e];}});return [rr,ri];}
+function srcPre(P,ex,ei){if(P.src[ei])return P.src[ei];const [ur,ui]=sourceVec(ex);bandSolve(N,BW,P.R,P.I,ur,ui);
+  const [rr,ri]=toBoundary(ur,ui);return P.src[ei]={ur,ui,rr,ri};}
+function monPre(P,ti,port,lam){if(P.mon[ti])return P.mon[ti];const mon=monitorVec(port,lam),wr=new Float64Array(N),wi=new Float64Array(N);for(const[i,v] of mon)wr[i]=v;
+  bandSolve(N,BW,P.R,P.I,wr,wi);const [rr,ri]=toBoundary(wr,wi);return P.mon[ti]={mon,rr,ri};}
+// Nested dissection of the design region: split it recursively into rectangles, eliminate the cells inside each piece,
+// and keep only a dense block on its rim. Sources and monitors lie outside, so the right-hand side lives on the design rim only.
+const ND_NODES=[];
+function ndBuild(x0,x1,y0,y1){const w=x1-x0,h=y1-y0,rim=(x,y)=>x===x0||y===y0||x===x1-1||y===y1-1,node={x0,x1,y0,y1};
+  let U;
+  if(w*h<=25){node.leaf=true;U=[];for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++)U.push(y*D+x);
+    const pos=new Map(U.map((c,k)=>[c,k]));node.pairs=[];
+    U.forEach((c,k)=>{const x=c%D,y=(c-x)/D;if(x+1<x1)node.pairs.push([k,pos.get(c+1)]);if(y+1<y1)node.pairs.push([k,pos.get(c+D)]);});}
+  else{let c1,c2;if(w>=h){const xm=x0+(w>>1);c1=ndBuild(x0,xm,y0,y1);c2=ndBuild(xm,x1,y0,y1);}else{const ym=y0+(h>>1);c1=ndBuild(x0,x1,y0,ym);c2=ndBuild(x0,x1,ym,y1);}
+    node.kids=[c1,c2];U=c1.K.concat(c2.K);const pos=new Map(U.map((c,k)=>[c,k]));node.pairs=[];
+    c1.K.forEach((c,k)=>{const x=c%D;for(const d of [1,-1,D,-D]){const n=c+d;if(d===1&&x===D-1||d===-1&&x===0)continue;
+      if(pos.has(n)&&pos.get(n)>=c1.K.length)node.pairs.push([k,pos.get(n)]);}});}
+  node.U=U;node.Eloc=[];node.Kloc=[];U.forEach((c,k)=>{const x=c%D,y=(c-x)/D;(rim(x,y)?node.Kloc:node.Eloc).push(k);});
+  node.K=node.Kloc.map(k=>U[k]);node.E=node.Eloc.map(k=>U[k]);ND_NODES.push(node);return node;}
+const ND_ROOT=ndBuild(0,D,0,D);
+const ND_MAX=Math.max(...ND_NODES.map(n=>n.U.length));
+const wMr=new Float64Array(ND_MAX*ND_MAX),wMi=new Float64Array(ND_MAX*ND_MAX);
+// dense complex elimination of E from M (n x n over U); returns Schur complement on K, stores G = M_EE^-1 M_EK on the node
+function ndElim(node,n,Mr,Mi){const E=node.Eloc,K=node.Kloc,ne=E.length,nk=K.length,nc=ne+nk;
+  if(!node.buf)node.buf={Ar:new Float64Array(ne*nc),Ai:new Float64Array(ne*nc),Br:new Float64Array(ne*nk),Bi:new Float64Array(ne*nk),Gr:new Float64Array(ne*nk),Gi:new Float64Array(ne*nk),Sr:new Float64Array(nk*nk),Si:new Float64Array(nk*nk)};
+  const {Ar,Ai,Br,Bi,Gr,Gi,Sr,Si}=node.buf;   // augmented [M_EE | M_EK]
+  for(let a=0;a<ne;a++){const r=E[a]*n;for(let b=0;b<ne;b++){Ar[a*nc+b]=Mr[r+E[b]];Ai[a*nc+b]=Mi[r+E[b]];}
+    for(let b=0;b<nk;b++){Ar[a*nc+ne+b]=Mr[r+K[b]];Ai[a*nc+ne+b]=Mi[r+K[b]];}}
+  for(let a=0;a<ne;a++)for(let b=0;b<nk;b++){Br[a*nk+b]=Ar[a*nc+ne+b];Bi[a*nk+b]=Ai[a*nc+ne+b];}
+  for(let k=0;k<ne;k++){let p=k,mx=-1;for(let i=k;i<ne;i++){const v=Ar[i*nc+k]*Ar[i*nc+k]+Ai[i*nc+k]*Ai[i*nc+k];if(v>mx){mx=v;p=i;}}
+    if(p!==k)for(let j=k;j<nc;j++){let t=Ar[k*nc+j];Ar[k*nc+j]=Ar[p*nc+j];Ar[p*nc+j]=t;t=Ai[k*nc+j];Ai[k*nc+j]=Ai[p*nc+j];Ai[p*nc+j]=t;}
+    const pr=Ar[k*nc+k],pi=Ai[k*nc+k],pd=pr*pr+pi*pi,ir=pr/pd,ii=-pi/pd,rk=k*nc;
+    for(let j=k;j<nc;j++){const xr=Ar[rk+j],xi=Ai[rk+j];Ar[rk+j]=xr*ir-xi*ii;Ai[rk+j]=xr*ii+xi*ir;}   // scale pivot row
+    for(let i=0;i<ne;i++){if(i===k)continue;const ri=i*nc,lr=Ar[ri+k],li=Ai[ri+k];if(lr===0&&li===0)continue;
+      for(let j=k;j<nc;j++){const ur=Ar[rk+j],ui=Ai[rk+j];Ar[ri+j]-=lr*ur-li*ui;Ai[ri+j]-=lr*ui+li*ur;}}}       // Gauss-Jordan
+  for(let a=0;a<ne;a++)for(let b=0;b<nk;b++){Gr[a*nk+b]=Ar[a*nc+ne+b];Gi[a*nk+b]=Ai[a*nc+ne+b];}
+  node.Gr=Gr;node.Gi=Gi;
+  for(let a=0;a<nk;a++){const r=K[a]*n;for(let b=0;b<nk;b++){Sr[a*nk+b]=Mr[r+K[b]];Si[a*nk+b]=Mi[r+K[b]];}}
+  for(let e=0;e<ne;e++){const ge=e*nk;for(let a=0;a<nk;a++){const br=Br[ge+a],bi=Bi[ge+a];if(br===0&&bi===0)continue;const ra=a*nk;   // M_KE = M_EK^T
+      for(let b=0;b<nk;b++){const gr=Gr[ge+b],gi=Gi[ge+b];Sr[ra+b]-=br*gr-bi*gi;Si[ra+b]-=br*gi+bi*gr;}}}
+  return [Sr,Si];}
+function ndFactor(node,q,eps){const n=node.U.length;if(!node.M)node.M=[new Float64Array(n*n),new Float64Array(n*n)];const [Mr,Mi]=node.M;Mr.fill(0);Mi.fill(0);
+  if(node.leaf){node.U.forEach((c,k)=>{const x=c%D,y=(c-x)/D;Mr[k*n+k]=-4+q*eps[idx(D0+x,D0+y)];});}
+  else{let o=0;for(const kid of node.kids){const [Sr,Si]=ndFactor(kid,q,eps),m=kid.K.length;
+      for(let a=0;a<m;a++)for(let b=0;b<m;b++){Mr[(o+a)*n+o+b]=Sr[a*m+b];Mi[(o+a)*n+o+b]=Si[a*m+b];}o+=m;}}
+  for(const[a,b] of node.pairs){Mr[a*n+b]+=1;Mr[b*n+a]+=1;}
+  return node.Eloc.length?ndElim(node,n,Mr,Mi):(()=>{const K=node.Kloc,m=K.length,Sr=new Float64Array(m*m),Si=new Float64Array(m*m);
+    for(let a=0;a<m;a++)for(let b=0;b<m;b++){Sr[a*m+b]=Mr[K[a]*n+K[b]];Si[a*m+b]=Mi[K[a]*n+K[b]];}node.Gr=node.Gi=null;return [Sr,Si];})();}
+// root rim order -> bCells order
+const ND_MAP=(()=>{const m=new Map(bCells.map((b,k)=>[b.j*D+b.i,k]));return ND_ROOT.K.map(c=>m.get(c));})();
+const Sr=new Float64Array(NB*NB),Si=new Float64Array(NB*NB),piv=new Int32Array(NB);
+function factorDesign(P,eps){const q=P.q,[Rr,Ri]=ndFactor(ND_ROOT,q,eps),n=NB;
+  for(let a=0;a<n;a++)for(let b=0;b<n;b++){const A=ND_MAP[a],B=ND_MAP[b];Sr[A*n+B]=Rr[a*n+b]-P.Wr[A*n+B];Si[A*n+B]=Ri[a*n+b]-P.Wi[A*n+B];}
+  for(let k=0;k<n;k++){let p=k,mx=-1;for(let i=k;i<n;i++){const a=Sr[i*n+k]*Sr[i*n+k]+Si[i*n+k]*Si[i*n+k];if(a>mx){mx=a;p=i;}}piv[k]=p;
+    if(p!==k)for(let j=0;j<n;j++){let t=Sr[k*n+j];Sr[k*n+j]=Sr[p*n+j];Sr[p*n+j]=t;t=Si[k*n+j];Si[k*n+j]=Si[p*n+j];Si[p*n+j]=t;}
+    const pr=Sr[k*n+k],pi=Si[k*n+k],pd=pr*pr+pi*pi,ir=pr/pd,ii=-pi/pd;
+    for(let i=k+1;i<n;i++){const ar=Sr[i*n+k],ai=Si[i*n+k],lr=ar*ir-ai*ii,li=ar*ii+ai*ir;Sr[i*n+k]=lr;Si[i*n+k]=li;
+      for(let j=k+1;j<n;j++){const ur=Sr[k*n+j],ui=Si[k*n+j];Sr[i*n+j]-=lr*ur-li*ui;Si[i*n+j]-=lr*ui+li*ur;}}}}
+const vR=new Float64Array(D*D),vI=new Float64Array(D*D);
+function ndRecover(node){const E=node.E,K=node.K,ne=E.length,nk=K.length;
+  for(let e=0;e<ne;e++){let sr=0,si=0;const o=e*nk;for(let k=0;k<nk;k++){const gr=node.Gr[o+k],gi=node.Gi[o+k],xr=vR[K[k]],xi=vI[K[k]];sr-=gr*xr-gi*xi;si-=gr*xi+gi*xr;}vR[E[e]]=sr;vI[E[e]]=si;}
+  if(node.kids)for(const k of node.kids)ndRecover(k);}
+function designSolve(rr,ri,outR,outI){const n=NB,br=Float64Array.from(rr),bi=Float64Array.from(ri);
+  for(let k=0;k<n;k++){const p=piv[k];if(p!==k){let t=br[k];br[k]=br[p];br[p]=t;t=bi[k];bi[k]=bi[p];bi[p]=t;}}
+  for(let i=0;i<n;i++){let sr=br[i],si=bi[i];for(let j=0;j<i;j++){const lr=Sr[i*n+j],li=Si[i*n+j];sr-=lr*br[j]-li*bi[j];si-=lr*bi[j]+li*br[j];}br[i]=sr;bi[i]=si;}
+  for(let i=n-1;i>=0;i--){let sr=br[i],si=bi[i];for(let j=i+1;j<n;j++){const ur=Sr[i*n+j],ui=Si[i*n+j];sr-=ur*br[j]-ui*bi[j];si-=ur*bi[j]+ui*br[j];}
+    const dr=Sr[i*n+i],di=Si[i*n+i],dd=dr*dr+di*di;br[i]=(sr*dr+si*di)/dd;bi[i]=(si*dr-sr*di)/dd;}
+  for(let k=0;k<n;k++){const c=bCells[k].j*D+bCells[k].i;vR[c]=br[k];vI[c]=bi[k];}
+  ndRecover(ND_ROOT);
+  for(let j=0;j<D;j++)for(let i=0;i<D;i++){const m=idx(D0+i,D0+j);outR[m]=vR[j*D+i];outI[m]=vI[j*D+i];}}
+function fullField(P,S,dR,dI){const yr=new Float64Array(N),yi=new Float64Array(N);
+  for(const b of bCells){const er=dR[b.n],ei=dI[b.n];for(const e of b.ext){yr[e]+=er;yi[e]+=ei;}}
+  bandSolve(N,BW,P.R,P.I,yr,yi,EXT0);
+  const Er=new Float64Array(N),Ei=new Float64Array(N);
+  for(let n=0;n<N;n++){Er[n]=S.ur[n]-yr[n];Ei[n]=S.ui[n]-yi[n];}
+  for(let j=0;j<D;j++)for(let i=0;i<D;i++){const m=idx(D0+i,D0+j);Er[m]=dR[m];Ei[m]=dI[m];}
+  return [Er,Ei];}
+
 // ---- state ----
 let T=null,tname='bend',epsBase=null,norms=[];
 const ND=D*D; let x=new Float64Array(ND),mA=new Float64Array(ND),vA=new Float64Array(ND);
 let rf=new Float64Array(ND),rp=new Float64Array(ND),grad=new Float64Array(ND);
-let it=0,beta=1,bin=true,filt=1,running=false,fields=[],effs=[],J=0,lastMs=0;
+let log=[],lastPost=0,it=0,beta=1,bin=true,filt=1,running=false,fields=[],effs=[],J=0,lastMs=0;
 function setTarget(name){tname=name;T=TARGETS[name];
   norms=T.terms.map(tm=>{const ex=T.ex[tm.e];return calib(ex.lam,ex.hw,ex.m).flux*calib(ex.lam,tm.port.hw,tm.port.m).kappa;});
-  epsBase=new Float64Array(N).fill(EPSC);T.wg(epsBase);reset();}
-function reset(){for(let i=0;i<ND;i++){x[i]=0.5;mA[i]=0;vA[i]=0;}it=0;beta=bin?1:0;grad.fill(0);evaluate(false);}
+  epsBase=new Float64Array(N).fill(EPSC);T.wg(epsBase);pre={};reset();}
+function reset(){for(let i=0;i<ND;i++){x[i]=0.5;mA[i]=0;vA[i]=0;}it=0;beta=bin?1:0;grad.fill(0);log=[];evaluate(false);}
 function kern(r){const k=[];if(r===0)return [[0,0,1]];let s=0;for(let a=-r;a<=r;a++)for(let b=-r;b<=r;b++){const w=Math.max(0,r+1-Math.hypot(a,b));if(w>0){k.push([a,b,w]);s+=w;}}return k.map(([a,b,w])=>[a,b,w/s]);}
 function params(){
   const K=kern(filt);
@@ -262,11 +383,15 @@ function evaluate(withGrad){
   const t0=Date.now();const eps=params();const gE=new Float64Array(N);fields=new Array(T.ex.length);effs=new Array(T.terms.length).fill(0);J=0;
   const lams=[...new Set(T.ex.map(e=>e.lam))];
   for(const lam of lams){
-    const q=factor(eps,lam);
-    T.ex.forEach((ex,ei)=>{if(ex.lam!==lam)return;const [Er,Ei]=sourceVec(ex);solve(Er,Ei);fields[ei]=[Er,Ei];
-      T.terms.forEach((tm,ti)=>{if(tm.e!==ei)return;const mon=monitorVec(tm.port,lam);const [cr,ci]=overlap(Er,Ei,mon);const Pw=(cr*cr+ci*ci)/norms[ti];
-        effs[ti]=Pw;J+=tm.s*Pw;
-        if(withGrad&&tm.s!==0){const lr=new Float64Array(N),li=new Float64Array(N);for(const[i,v] of mon)lr[i]=v;solve(lr,li);
+    const P=prepLam(lam),q=P.q;factorDesign(P,eps);
+    T.ex.forEach((ex,ei)=>{if(ex.lam!==lam)return;const S=srcPre(P,ex,ei),Er=new Float64Array(N),Ei=new Float64Array(N);designSolve(S.rr,S.ri,Er,Ei);
+      fields[ei]={P,S,Er,Ei};   // the full field (outside the design too) is only reconstructed when it is drawn
+      T.terms.forEach((tm,ti)=>{if(tm.e!==ei)return;const Mp=monPre(P,ti,tm.port,lam);
+        // overlap with the monitor mode from the rim values alone: c.E = c.u + sum_b E_b r_b
+        let cr=0,ci=0;for(const[i,v] of Mp.mon){cr+=v*S.ur[i];ci+=v*S.ui[i];}
+        bCells.forEach((b,k)=>{const er=Er[b.n],eim=Ei[b.n];cr+=er*Mp.rr[k]-eim*Mp.ri[k];ci+=er*Mp.ri[k]+eim*Mp.rr[k];});
+        const Pw=(cr*cr+ci*ci)/norms[ti];effs[ti]=Pw;J+=tm.s*Pw;
+        if(withGrad&&tm.s!==0){const lr=new Float64Array(N),li=new Float64Array(N);designSolve(Mp.rr,Mp.ri,lr,li);
           for(let j=0;j<D;j++)for(let i=0;i<D;i++){const n=idx(D0+i,D0+j);
             const dr=-q*(Er[n]*lr[n]-Ei[n]*li[n]), di=-q*(Er[n]*li[n]+Ei[n]*lr[n]);
             gE[n]+=tm.s*2*(cr*dr+ci*di)/norms[ti];}}});
@@ -283,7 +408,7 @@ function evaluate(withGrad){
   lastMs=Date.now()-t0;
 }
 function step(){
-  evaluate(true);
+  evaluate(true);log.push([it,effs.slice()]);
   const lr=0.05,b1=0.9,b2=0.99,t=it+1;
   for(let k=0;k<ND;k++){mA[k]=b1*mA[k]+(1-b1)*grad[k];vA[k]=b2*vA[k]+(1-b2)*grad[k]*grad[k];
     const mh=mA[k]/(1-Math.pow(b1,t)),vh=vA[k]/(1-Math.pow(b2,t));x[k]=Math.min(1,Math.max(0,x[k]+lr*mh/(Math.sqrt(vh)+1e-8)));}
@@ -293,14 +418,14 @@ function post(){
   const M=NX-2*A, crop=(arr)=>{const o=new Float32Array(M*M);for(let y=0;y<M;y++)for(let xx=0;xx<M;xx++)o[y*M+xx]=arr[idx(A+xx,A+y)];return o;};
   const eps=params(); const en=new Float32Array(M*M);for(let y=0;y<M;y++)for(let xx=0;xx<M;xx++)en[y*M+xx]=(eps[idx(A+xx,A+y)]-EPSC)/(EPSH-EPSC);
   self.postMessage({type:'state',it,J,effs,target:tname,M,D0:D0-A,D,eps:en,grad:Float32Array.from(grad),
-    fields:fields.map(([r,i])=>[crop(r),crop(i)]),ms:lastMs,running,beta});
+    fields:fields.map(f=>{const [r,i]=fullField(f.P,f.S,f.Er,f.Ei);return [crop(r),crop(i)];}),ms:lastMs,running,beta,log});log=[];lastPost=Date.now();
 }
-function loop(){ if(!running)return; step(); evaluate(false); post(); if(it>=400){running=false;post();return;} setTimeout(loop,0); }
+function loop(){ if(!running)return; step(); if(it>=400){running=false;evaluate(false);post();return;} if(Date.now()-lastPost>45)post(); setTimeout(loop,0); }
 self.onmessage=e=>{const m=e.data;
   if(m.cmd==='target'){setTarget(m.name);post();}
   else if(m.cmd==='reset'){reset();post();}
   else if(m.cmd==='run'){if(!running){running=true;loop();}}
-  else if(m.cmd==='pause'){running=false;post();}
+  else if(m.cmd==='pause'){running=false;evaluate(false);post();}
   else if(m.cmd==='step'){running=false;step();evaluate(false);post();}
   else if(m.cmd==='filt'){filt=m.v;evaluate(false);post();}
   else if(m.cmd==='bin'){bin=m.v;beta=bin?Math.max(1,beta||1):0;evaluate(false);post();}
@@ -378,8 +503,8 @@ function stats(){if(!st)return;$('oIt').textContent=st.it;
   $('lam0').setAttribute('aria-pressed',lamSel===0);$('lam1').setAttribute('aria-pressed',lamSel===1);
   $('busy').textContent=running?'optimizing…':'';}
 
-w.onmessage=e=>{const m=e.data;if(m.type!=='state')return;
-  if(m.it===0)hist=[];if(m.it>hist.length-1||m.it===0){hist[m.it]=m.effs.slice();}
+w.onmessage=e=>{const m=e.data;if(m.type!=='state'||m.target!==target)return;
+  if(m.it===0)hist=[];for(const[k,e] of (m.log||[]))hist[k]=e;if(m.it>hist.length-1||m.it===0){hist[m.it]=m.effs.slice();}
   st=m;running=m.running;target=m.target;drawDesign();drawEff();stats();};
 document.querySelectorAll('#targets .chip').forEach(b=>b.onclick=()=>{target=b.dataset.t;lamSel=target==='demux'?0:0;hist=[];w.postMessage({cmd:'target',name:target});if(running)w.postMessage({cmd:'run'});});
 $('bRun').onclick=()=>{running=!running;w.postMessage({cmd:running?'run':'pause'});stats();};
